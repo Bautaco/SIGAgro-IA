@@ -65,16 +65,26 @@ información de referencia agronómica, para que luego lo **valide un Ingeniero 
 En Windows (PowerShell), desde la carpeta `SIGAgro-IA`:
 
 ```powershell
-# 1. Entorno virtual e instalación de dependencias (una sola vez)
+# 1. Instalación completa (una sola vez): crea .venv, instala dependencias, crea .env y descarga el modelo
+powershell -ExecutionPolicy Bypass -File .\instalar.ps1        # agregar -Dev para instalar pytest y correr los tests
+
+# 2. Iniciar el servicio
+powershell -ExecutionPolicy Bypass -File .\iniciar.ps1
+```
+
+`instalar.ps1` se puede volver a ejecutar sin problema (saltea lo que ya está hecho). Si no encuentra Python 3.13,
+indica cómo instalarlo (`winget install Python.Python.3.13`).
+
+<details>
+<summary>Instalación manual (equivalente al script)</summary>
+
+```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu
-
-# 2. Configuración (una sola vez)
 copy .env.example .env
-
-# 3. Iniciar el servicio
 .\iniciar.ps1
 ```
+</details>
 
 `iniciar.ps1` carga las variables de `.env` (o de `.env.example` si no existe) y levanta uvicorn en
 `http://127.0.0.1:8000`. Opciones: `-Puerto 8001` y `-Direccion 0.0.0.0` (esta última solo si el backend corre en
@@ -305,6 +315,7 @@ SIGAgro-IA/
 │   ├── conocimiento.py  # Información de referencia por clase y normalización de cultivos
 │   └── config.py        # Variables de entorno
 ├── tests/test_api.py    # Tests con clasificador falso
+├── instalar.ps1         # Instalación del entorno en Windows (venv, dependencias, .env, modelo)
 ├── iniciar.ps1          # Inicio en Windows (carga .env)
 ├── Dockerfile           # Imagen para despliegue (modelo incluido)
 ├── .env.example         # Configuración de referencia
@@ -332,7 +343,7 @@ SIGAgro-IA/
 | `/salud` responde `MODELO_NO_DISPONIBLE` o 503 | Sin internet en el primer arranque, poca RAM o todavía cargando | Esperar unos segundos; dar internet la primera vez; ≥2 GB de RAM; ver el campo `error` |
 | Siempre `NO_SOPORTADO` | El cultivo del lote no está cubierto | Limitación del modelo: solo maíz, trigo, papa y arroz |
 | Muchos `INCONCLUSO` | Fotos lejanas, con varias hojas o fondo | Fotografiar una sola hoja con síntomas, de cerca, con luz natural |
-| `No existe el entorno virtual` al iniciar | Falta la instalación | Ejecutar los pasos 1 y 2 de [Instalación](#instalación-y-puesta-en-marcha) |
+| `No existe el entorno virtual` al iniciar | Falta la instalación | Ejecutar `.\instalar.ps1` |
 
 ---
 
