@@ -1,0 +1,6 @@
+-r requirements.txt
+# Solo para entrenar el modelo de cultivos extensivos (entrenamiento/)
+pyarrow>=15
+scikit-learn>=1.4
+# torchvision CPU: instalar con --index-url https://download.pytorch.org/whl/cpu
+torchvision

@@ -49,12 +49,13 @@ def imagen(ancho=400, alto=300, ruido=True, valor=120, formato="JPEG") -> str:
     return f"data:image/{mime};base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def cliente(probs: dict[str, float], token: str = "", **cfg) -> TestClient:
+def cliente(probs: dict[str, float], token: str = "", en_linea=None, **cfg) -> TestClient:
     config = cargar_config()
     config = config.__class__(**{**config.__dict__, "token_servicio": token, **cfg})
     gestor = GestorModelo()
     gestor.clasificador = ClasificadorFalso(probs)
-    return TestClient(crear_app(config, gestor, cargar_modelo=False))
+    # en_linea explícito: los tests nunca llaman a un servicio externo
+    return TestClient(crear_app(config, gestor, cargar_modelo=False, en_linea=en_linea))
 
 
 def inferir(c: TestClient, **body):
@@ -96,17 +97,24 @@ def test_clases_parejas_es_inconcluso_aunque_supere_el_umbral():
     assert d["estado"] == "INCONCLUSO"
 
 
-def test_cultivo_distinto_al_del_lote_es_inconcluso():
+def test_cultivo_distinto_al_del_lote_se_analiza_igual_y_avisa():
     d = inferir(cliente({"Wheat___Brown_Rust": 0.93, "Wheat___Healthy": 0.07}), cultivo="Maíz").json()
-    assert d["estado"] == "INCONCLUSO"
-    assert "trigo" in d["mensaje"] and "maíz" in d["mensaje"]
+    assert d["estado"] == "OK"  # la foto se analiza siempre
+    assert d["afeccion"] == "Roya anaranjada del trigo" or "trigo" in d["afeccion"].lower()
+    assert d["cultivoNoCoincide"] is True and d["cultivoIndicado"] == "Maíz"
+    assert "Maíz" in d["observaciones"][0] and "trigo" in d["observaciones"][0]
 
 
-def test_cultivo_no_cubierto_por_el_modelo():
+def test_cultivo_coincidente_no_avisa():
+    d = inferir(cliente({"Corn___Common_Rust": 0.95, "Corn___Healthy": 0.05}), cultivo="Maíz 2da").json()
+    assert d["estado"] == "OK" and d["cultivoNoCoincide"] is False and d["cultivoIndicado"] == "Maíz 2da"
+
+
+def test_cultivo_no_cubierto_se_analiza_con_los_modelos_locales_y_avisa():
     d = inferir(cliente({"Corn___Common_Rust": 0.99}), cultivo="Soja").json()
-    assert d["estado"] == "NO_SOPORTADO"
-    assert "Soja" in d["mensaje"] and "Maíz" in d["mensaje"]
-    assert d["afeccion"] is None
+    assert d["estado"] == "OK"
+    assert d["cultivoNoCoincide"] is True
+    assert any("no está entre los que reconocen los modelos locales" in o for o in d["observaciones"])
 
 
 def test_muestra_de_suelo_no_soportada():
@@ -168,7 +176,7 @@ def test_token_de_servicio():
 
 def test_modelo_no_cargado_503():
     config = cargar_config()
-    app = crear_app(config, GestorModelo(), cargar_modelo=False)
+    app = crear_app(config, GestorModelo(), cargar_modelo=False, en_linea=None)
     c = TestClient(app)
     assert inferir(c).status_code == 503
     assert c.get("/salud").json()["estado"] == "MODELO_NO_DISPONIBLE"

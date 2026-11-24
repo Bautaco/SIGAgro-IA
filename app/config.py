@@ -41,6 +41,15 @@ class Config:
     nitidez_minima: float
     # Cantidad de diagnósticos alternativos que se devuelven.
     alternativas: int
+    # Análisis en línea (Claude) para cultivos que el modelo local no cubre o resultados no concluyentes.
+    # EN_LINEA: auto (si hay ANTHROPIC_API_KEY) | si | no
+    # Modelos locales adicionales (rutas o ids de Hugging Face) para otros cultivos
+    modelos_adicionales: tuple[str, ...] = ()
+    en_linea_habilitado: bool = False
+    modelo_en_linea: str = "claude-opus-5-5"
+    timeout_en_linea: float = 45.0
+    esfuerzo_en_linea: str = "medium"
+    umbral_en_linea: float = 0.6
 
 
 def cargar_config() -> Config:
@@ -56,4 +65,29 @@ def cargar_config() -> Config:
         brillo_maximo=_float("BRILLO_MAXIMO", 235),
         nitidez_minima=_float("NITIDEZ_MINIMA", 25),
         alternativas=_int("ALTERNATIVAS", 3),
+        modelos_adicionales=_modelos_adicionales(),
+        en_linea_habilitado=_en_linea_habilitado(),
+        modelo_en_linea=(os.environ.get("MODELO_EN_LINEA") or "claude-opus-5-5").strip(),
+        timeout_en_linea=_float("TIMEOUT_EN_LINEA", 45.0),
+        esfuerzo_en_linea=(os.environ.get("ESFUERZO_EN_LINEA") or "medium").strip(),
+        umbral_en_linea=_float("UMBRAL_EN_LINEA", 0.6),
     )
+
+
+def _modelos_adicionales() -> tuple[str, ...]:
+    """MODELOS_ADICIONALES=ruta1,ruta2. Sin la variable, se usa modelos/sigagro-extensivos si existe."""
+    from pathlib import Path
+
+    texto = os.environ.get("MODELOS_ADICIONALES")
+    if texto is None:
+        por_defecto = Path(__file__).resolve().parent.parent / "modelos" / "sigagro-extensivos"
+        return (str(por_defecto),) if (por_defecto / "config.json").exists() else ()
+    return tuple(x.strip() for x in texto.split(",") if x.strip())
+
+
+def _en_linea_habilitado() -> bool:
+    modo = (os.environ.get("EN_LINEA") or "auto").strip().lower()
+    if modo in ("no", "false", "0"):
+        return False
+    tiene_clave = bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+    return tiene_clave if modo == "auto" else tiene_clave or modo in ("si", "sí", "true", "1")

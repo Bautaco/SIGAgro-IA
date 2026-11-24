@@ -16,6 +16,8 @@ RUN python -c "import os; from transformers import AutoImageProcessor, AutoModel
 i=os.environ['MODELO_ID']; r=os.environ['MODELO_REVISION']; AutoImageProcessor.from_pretrained(i, revision=r); M.from_pretrained(i, revision=r)"
 
 COPY app ./app
+# Modelos entrenados en el proyecto (sigagro-extensivos: soja, girasol, maní)
+COPY modelos ./modelos
 ENV HF_HUB_OFFLINE=1
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

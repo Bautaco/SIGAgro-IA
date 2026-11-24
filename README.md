@@ -1,352 +1,536 @@
-# SIGAgro IA — Diagnóstico fitosanitario por imagen
+# SIGAgro IA
 
-Servicio de inteligencia artificial de **SIGAgro (Sistema Integral de Gestión Agronómica)**. Recibe la fotografía de
-una hoja tomada en el lote y devuelve un **diagnóstico probable** de enfermedad foliar, con su nivel de confianza e
-información de referencia agronómica, para que luego lo **valide un Ingeniero Agrónomo** dentro de SIGAgro.
+**Servicio de diagnóstico fitosanitario por imagen del Sistema Integral de Gestión Agronómica (SIGAgro).**
 
-- **Tecnología:** Python 3.13 · FastAPI · Hugging Face Transformers · PyTorch (CPU)
-- **Modelo por defecto:** [`wambugu71/crop_leaf_diseases_vit`](https://huggingface.co/wambugu71/crop_leaf_diseases_vit) (Vision Transformer)
-- **Cultivos cubiertos:** Maíz, Trigo, Papa y Arroz
-- **Puerto:** `8000` · **Contrato de API:** versión 2
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-CPU-EE4C2C?logo=pytorch&logoColor=white)
+![Contrato](https://img.shields.io/badge/contrato_API-v2-315d40)
+![Tests](https://img.shields.io/badge/tests-37_pasan-2e7d32)
 
-> Este servicio **no reemplaza al profesional**: un resultado `OK` es un diagnóstico *probable*, nunca confirmado.
-> No estima la gravedad ni recomienda productos o dosis.
+SIGAgro IA recibe la fotografía de una hoja o planta tomada en un lote y devuelve un **diagnóstico probable**
+(enfermedad, plaga o deficiencia), su nivel de confianza e información técnica de referencia. El resultado se
+registra en SIGAgro como *pendiente de validación* hasta que lo **revisa y valida un Ingeniero Agrónomo**.
 
----
-
-## Índice
-
-1. [Cómo encaja en SIGAgro](#cómo-encaja-en-sigagro)
-2. [Requisitos](#requisitos)
-3. [Instalación y puesta en marcha](#instalación-y-puesta-en-marcha)
-4. [Configuración](#configuración)
-5. [Conexión con el backend](#conexión-con-el-backend)
-6. [API](#api)
-7. [Cómo se analiza una imagen](#cómo-se-analiza-una-imagen)
-8. [Enfermedades que reconoce](#enfermedades-que-reconoce)
-9. [Reglas de seguridad agronómica](#reglas-de-seguridad-agronómica)
-10. [Limitaciones del modelo](#limitaciones-del-modelo)
-11. [Despliegue con Docker](#despliegue-con-docker)
-12. [Tests](#tests)
-13. [Estructura del proyecto](#estructura-del-proyecto)
-14. [Cambiar el modelo](#cambiar-el-modelo)
-15. [Solución de problemas](#solución-de-problemas)
+> [!IMPORTANT]
+> El servicio **asiste** al profesional; no lo reemplaza. Un resultado `OK` es un diagnóstico **probable**, nunca
+> confirmado. El servicio **no estima la gravedad** y **no recomienda productos ni dosis**: los productos salen del
+> catálogo fitosanitario oficial de SIGAgro y los indica el Ingeniero Agrónomo en la receta.
 
 ---
 
-## Cómo encaja en SIGAgro
+## Contenido
 
-```
- Navegador (React)  ──►  BackEnd NestJS :3000  ──►  SIGAgro IA :8000  (este servicio)
-                              │   ClienteInferenciaIA
-                              └──►  PostgreSQL + PostGIS
+1. [Características](#características)
+2. [Arquitectura](#arquitectura)
+3. [Cultivos y afecciones cubiertos](#cultivos-y-afecciones-cubiertos)
+4. [Requisitos](#requisitos)
+5. [Instalación](#instalación)
+6. [Ejecución](#ejecución)
+7. [Configuración](#configuración)
+8. [Integración con el backend de SIGAgro](#integración-con-el-backend-de-sigagro)
+9. [Referencia de la API](#referencia-de-la-api)
+10. [Lógica de decisión](#lógica-de-decisión)
+11. [Principios de seguridad agronómica](#principios-de-seguridad-agronómica)
+12. [Análisis en línea](#análisis-en-línea)
+13. [Modelo `sigagro-extensivos`](#modelo-sigagro-extensivos)
+14. [Limitaciones conocidas](#limitaciones-conocidas)
+15. [Despliegue con Docker](#despliegue-con-docker)
+16. [Pruebas](#pruebas)
+17. [Estructura del proyecto](#estructura-del-proyecto)
+18. [Solución de problemas](#solución-de-problemas)
+19. [Créditos y licencias](#créditos-y-licencias)
+
+---
+
+## Características
+
+- **Análisis en tres niveles**, del más económico al más amplio:
+
+  | Nivel | Motor | Cultivos | Requiere |
+  |---|---|---|---|
+  | 1 | Modelo principal, local ([`wambugu71/crop_leaf_diseases_vit`](https://huggingface.co/wambugu71/crop_leaf_diseases_vit)) | Maíz, trigo, papa, arroz | — |
+  | 2 | Modelo `sigagro-extensivos`, local, entrenado en este proyecto | Soja, girasol, maní | — |
+  | 3 | Análisis en línea con un modelo multimodal (Claude, de Anthropic) | Cualquier cultivo de Argentina | Clave de API e internet (opcional) |
+
+- **La foto se analiza siempre.** SIGAgro informa el cultivo sembrado en el lote (labor de siembra o ficha del lote) y
+  el servicio usa el modelo que lo cubre; si ninguno lo cubre, usa el análisis en línea o, sin él, todos los modelos
+  locales. Si en la foto se reconoce **otro cultivo**, el diagnóstico se informa igual con `cultivoNoCoincide: true` y
+  un aviso para que el usuario confirme el lote o lo cambie (SIGAgro vuelve a analizar la foto con el lote correcto).
+- **Control de calidad de la imagen** antes de analizar: resolución, iluminación y enfoque.
+- **Prudencia ante la duda:** confianza baja o clases parejas producen `INCONCLUSO`, con el motivo y la indicación
+  de tomar otra foto.
+- **Trazabilidad:** cada respuesta identifica el modelo y la versión usados, el origen del análisis y el tipo de
+  confianza.
+- **Funcionamiento sin conexión** con los modelos locales; el análisis en línea es una mejora opcional.
+- **Seguridad:** solo acepta imágenes embebidas (no descarga URLs), limita el tamaño y admite un token entre
+  servicios.
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    U[Navegador<br/>SIGAgro FrontEnd] -->|HTTPS| B[SIGAgro BackEnd<br/>NestJS :3000]
+    B -->|POST /inferencia| IA[SIGAgro IA<br/>FastAPI :8000]
+    B --> DB[(PostgreSQL<br/>+ PostGIS)]
+    IA --> M1[Modelo principal<br/>maíz · trigo · papa · arroz]
+    IA --> M2[sigagro-extensivos<br/>soja · girasol · maní]
+    IA -. opcional .-> C[Análisis en línea<br/>Claude · Anthropic]
 ```
 
-- El **navegador nunca llama a este servicio**: solo lo consume el backend, a través de `ClienteInferenciaIA`
-  (`SIGAgro-BackEnd/src/common/inferencia-ia/`). Por eso escucha en `127.0.0.1` y no se expone a internet.
-- Flujo en SIGAgro: el usuario carga una **muestra** (foto, campo, lote, tipo de muestra y cultivo) → el backend pide
-  la **inferencia** → el diagnóstico queda `PENDIENTE_VALIDACION` → el **Ingeniero Agrónomo** lo acepta, rectifica o
-  rechaza y define la gravedad → se puede iniciar la **receta fitosanitaria** con productos del catálogo oficial.
-- Si el servicio no está disponible, SIGAgro **sigue funcionando**: la muestra se guarda con estado
-  `ERROR_SERVICIO` ("IA no disponible") y el análisis se puede reintentar más tarde. Nunca se inventa un resultado.
+- El **navegador nunca se comunica con este servicio**: lo consume únicamente el backend, a través de
+  `ClienteInferenciaIA` (`SIGAgro-BackEnd/src/common/inferencia-ia/`). Por eso escucha en `127.0.0.1`.
+- **Flujo en SIGAgro:** muestra (foto, campo, lote, tipo de muestra y cultivo) → inferencia → diagnóstico
+  `PENDIENTE_VALIDACION` → revisión del Ingeniero Agrónomo (aceptar, rectificar o rechazar y definir la gravedad) →
+  receta fitosanitaria con productos del catálogo oficial.
+- **Tolerancia a fallos:** si el servicio no responde, SIGAgro registra la muestra como `ERROR_SERVICIO`
+  ("IA no disponible") y permite reintentar el análisis más tarde. Ningún componente inventa un resultado.
+
+## Cultivos y afecciones cubiertos
+
+| Cultivo | Modelo | Clases |
+|---|---|---|
+| Maíz | Principal | Roya común · Mancha gris · Sano |
+| Trigo | Principal | Roya anaranjada · Roya amarilla · Sano |
+| Papa | Principal | Tizón temprano · Tizón tardío · Sano |
+| Arroz | Principal | Mancha parda · Piricularia · Sano |
+| Soja | `sigagro-extensivos` | Mancha ojo de rana · Roya · Mancha marrón (*Septoria*) · Mosaico (virosis) · Orugas defoliadoras · Vaquita de San Antonio (*Diabrotica speciosa*) · Sana |
+| Girasol | `sigagro-extensivos` | Mildiu · Podredumbre gris · Sano |
+| Maní | `sigagro-extensivos` | Viruela temprana · Viruela tardía · Roya · Deficiencia nutricional · Sano |
+| Otros cultivos | En línea | Según lo que identifique el modelo, con las mismas reglas de prudencia |
+
+La información de referencia de cada clase (agente causal, síntomas, condiciones predisponentes, consecuencias y
+alternativas de manejo generales) está en [`app/conocimiento.py`](app/conocimiento.py).
 
 ## Requisitos
 
 | Recurso | Mínimo |
 |---|---|
+| Sistema operativo | Windows 10/11 (scripts PowerShell incluidos) · Linux o macOS (manual o Docker) |
 | Python | 3.13 |
-| RAM | 2 GB libres (el modelo ocupa ~1 GB en memoria) |
-| Disco | ~2 GB (PyTorch CPU + modelo) |
-| Internet | Solo la primera vez, para descargar el modelo (~350 MB, queda en caché) |
+| Memoria RAM | 2 GB libres |
+| Disco | ~2,5 GB (PyTorch CPU, librerías y modelos) |
+| Internet | Solo en la instalación (descarga del modelo principal, ~350 MB) y, si se habilita, para el análisis en línea |
 | GPU | No necesaria |
 
-## Instalación y puesta en marcha
+## Instalación
 
-En Windows (PowerShell), desde la carpeta `SIGAgro-IA`:
-
-```powershell
-# 1. Instalación completa (una sola vez): crea .venv, instala dependencias, crea .env y descarga el modelo
-powershell -ExecutionPolicy Bypass -File .\instalar.ps1        # agregar -Dev para instalar pytest y correr los tests
-
-# 2. Iniciar el servicio
-powershell -ExecutionPolicy Bypass -File .\iniciar.ps1
-```
-
-`instalar.ps1` se puede volver a ejecutar sin problema (saltea lo que ya está hecho). Si no encuentra Python 3.13,
-indica cómo instalarlo (`winget install Python.Python.3.13`).
-
-<details>
-<summary>Instalación manual (equivalente al script)</summary>
+Desde la carpeta `SIGAgro-IA`, en PowerShell:
 
 ```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu
-copy .env.example .env
-.\iniciar.ps1
+powershell -ExecutionPolicy Bypass -File .\instalar.ps1
 ```
-</details>
 
-`iniciar.ps1` carga las variables de `.env` (o de `.env.example` si no existe) y levanta uvicorn en
-`http://127.0.0.1:8000`. Opciones: `-Puerto 8001` y `-Direccion 0.0.0.0` (esta última solo si el backend corre en
-otra máquina). Los scripts `start-dev.ps1` y `start-prod.ps1` de la carpeta raíz del sistema ya lo lanzan.
+El script es idempotente (se puede volver a ejecutar) y realiza:
 
-Para comprobar que está listo, abrir <http://127.0.0.1:8000/salud>: debe responder `"estado": "OK"`.
-La documentación interactiva (Swagger) queda en <http://127.0.0.1:8000/docs>.
+1. Verificación de Python 3.13 (si falta, indica cómo instalarlo: `winget install Python.Python.3.13`).
+2. Creación del entorno virtual `.venv`.
+3. Instalación de dependencias (PyTorch para CPU, Transformers, FastAPI y el SDK de Anthropic).
+4. Creación de `.env` a partir de `.env.example`.
+5. Descarga anticipada del modelo principal.
+
+Con `-Dev` instala además las herramientas de prueba y ejecuta la suite.
 
 <details>
-<summary>Iniciarlo sin el script (Linux/macOS o manualmente)</summary>
+<summary><b>Instalación manual</b> (Linux, macOS o sin scripts)</summary>
 
 ```bash
 python3.13 -m venv .venv
-.venv/bin/pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu
+cp .env.example .env
+```
+</details>
+
+## Ejecución
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\iniciar.ps1
+```
+
+`iniciar.ps1` carga las variables de `.env` y levanta el servicio en `http://127.0.0.1:8000`. Parámetros opcionales:
+`-Puerto <n>` y `-Direccion 0.0.0.0` (solo si el backend se ejecuta en otra máquina).
+
+Los scripts de la carpeta raíz del sistema (`start-dev.ps1`, `start-prod.ps1`) inician este servicio junto con el
+backend y el frontend, y luego ejecutan `verificar-ia.ps1` para confirmar que quedó operativo.
+
+**Verificación:**
+
+| URL | Resultado esperado |
+|---|---|
+| <http://127.0.0.1:8000/salud> | `"estado": "OK"` |
+| <http://127.0.0.1:8000/docs> | Documentación interactiva (Swagger UI) |
+
+<details>
+<summary><b>Ejecución manual</b></summary>
+
+El servicio lee variables de entorno; no carga `.env` por sí mismo (eso lo hace `iniciar.ps1`).
+
+```bash
 export MODELO_REVISION=7d5b32bcd6f83a2f57e7e0346358fad276296877
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
-El servicio lee **variables de entorno**; no carga `.env` por sí mismo (eso lo hace `iniciar.ps1`).
 </details>
 
 ## Configuración
 
-| Variable | Defecto | Uso |
-|---|---|---|
-| `MODELO_ID` | `wambugu71/crop_leaf_diseases_vit` | Modelo `image-classification` de Hugging Face |
-| `MODELO_REVISION` | (última) | Commit fijo del modelo, para resultados reproducibles. `.env.example` trae el probado |
-| `UMBRAL_CONFIANZA` | `0.60` | Por debajo, el resultado es `INCONCLUSO` |
-| `MARGEN_MINIMO` | `0.15` | Si la 1ª y la 2ª clase están más cerca que esto, `INCONCLUSO` |
-| `TOKEN_SERVICIO` | (vacío) | Token compartido con el backend (`Authorization: Bearer`). Vacío = sin autenticación, solo desarrollo |
-| `MAX_BYTES` | `8388608` (8 MB) | Tamaño máximo de la imagen (413 si se supera) |
-| `LADO_MINIMO_PX` | `160` | Resolución mínima del lado menor |
-| `BRILLO_MINIMO` / `BRILLO_MAXIMO` | `35` / `235` | Rango de brillo medio aceptado (0–255) |
-| `NITIDEZ_MINIMA` | `25` | Varianza del laplaciano mínima (detecta fotos movidas o desenfocadas) |
-| `ALTERNATIVAS` | `3` | Cantidad de diagnósticos alternativos devueltos |
+Todas las opciones se definen en `.env` (plantilla: [`.env.example`](.env.example)). El archivo `.env` está
+excluido del control de versiones.
 
-## Conexión con el backend
+**Servicio y seguridad**
+
+| Variable | Valor por defecto | Descripción |
+|---|---|---|
+| `TOKEN_SERVICIO` | *(vacío)* | Token compartido con el backend (`Authorization: Bearer`). Vacío: sin autenticación, solo para uso local |
+| `MAX_BYTES` | `8388608` | Tamaño máximo de la imagen (8 MB). Si se supera: HTTP 413 |
+
+**Modelos locales**
+
+| Variable | Valor por defecto | Descripción |
+|---|---|---|
+| `MODELO_ID` | `wambugu71/crop_leaf_diseases_vit` | Modelo principal (Hugging Face `image-classification`) |
+| `MODELO_REVISION` | revisión fijada en `.env.example` | Commit del modelo, para resultados reproducibles |
+| `MODELOS_ADICIONALES` | `modelos/sigagro-extensivos` (si existe) | Modelos locales adicionales, separados por coma |
+| `UMBRAL_CONFIANZA` | `0.60` | Probabilidad mínima para aceptar un resultado |
+| `MARGEN_MINIMO` | `0.15` | Diferencia mínima entre la primera y la segunda clase |
+| `ALTERNATIVAS` | `3` | Cantidad de diagnósticos alternativos informados |
+
+**Control de calidad de la imagen**
+
+| Variable | Valor por defecto | Descripción |
+|---|---|---|
+| `LADO_MINIMO_PX` | `160` | Resolución mínima del lado menor |
+| `BRILLO_MINIMO` / `BRILLO_MAXIMO` | `35` / `235` | Brillo medio aceptado (escala 0–255) |
+| `NITIDEZ_MINIMA` | `25` | Varianza mínima del laplaciano (detecta fotos movidas o desenfocadas) |
+
+**Análisis en línea (opcional)**
+
+| Variable | Valor por defecto | Descripción |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | *(vacío)* | Clave de API de Anthropic. Vacía: solo modelos locales |
+| `EN_LINEA` | `auto` | `auto` (se habilita si hay clave) · `si` · `no` |
+| `MODELO_EN_LINEA` | `claude-opus-5-5` | Modelo multimodal utilizado |
+| `ESFUERZO_EN_LINEA` | `medium` | Nivel de razonamiento: `low` · `medium` · `high` · `xhigh` · `max` |
+| `TIMEOUT_EN_LINEA` | `45` | Tiempo máximo de espera, en segundos |
+| `UMBRAL_EN_LINEA` | `0.60` | Confianza estimada mínima para aceptar el resultado |
+
+> [!CAUTION]
+> La clave `ANTHROPIC_API_KEY` es secreta: nunca debe incluirse en el repositorio ni compartirse.
+
+## Integración con el backend de SIGAgro
 
 En `SIGAgro-BackEnd/.env`:
 
 ```env
 AI_SERVICE_URL=http://127.0.0.1:8000
-AI_SERVICE_TOKEN=          # el MISMO valor que TOKEN_SERVICIO (vacío si no se usa token)
-AI_SERVICE_TIMEOUT_MS=15000
+AI_SERVICE_TOKEN=              # mismo valor que TOKEN_SERVICIO (vacío si no se usa)
+AI_SERVICE_TIMEOUT_MS=60000    # el análisis en línea puede demorar más que el local
 ```
 
-Con eso, la pantalla **Diagnóstico IA** de SIGAgro muestra la tarjeta "Servicio de IA: **Disponible**" y la lista
-de cultivos cubiertos (`GET /api/diagnostico-ia/diagnosticos/servicio-ia` del backend consulta `/salud` y `/modelo`).
+> [!NOTE]
+> Se recomienda `127.0.0.1` en lugar de `localhost`: en Windows `localhost` puede resolverse a la dirección IPv6
+> `::1`, en la que el servicio no escucha.
 
-## API
+Con la integración activa, la pantalla **Diagnóstico IA** de SIGAgro muestra el estado del servicio y los cultivos
+cubiertos (el backend consulta `/salud` y `/modelo` mediante `GET /api/diagnostico-ia/diagnosticos/servicio-ia`).
 
-| Método | Ruta | Token | Descripción |
+## Referencia de la API
+
+| Método | Ruta | Autenticación | Descripción |
 |---|---|---|---|
-| `GET` | `/salud` | No | Estado del servicio: `{ estado: OK \| MODELO_NO_DISPONIBLE, modelo, error, versionContrato }` |
-| `GET` | `/modelo` | Sí* | Id y versión del modelo, etiquetas, `cultivosCubiertos`, `umbralConfianza`, `estimaGravedad: false` |
-| `POST` | `/inferencia` | Sí* | Analiza una imagen |
+| `GET` | `/salud` | No | Estado del servicio, de los modelos y del análisis en línea |
+| `GET` | `/modelo` | Token\* | Modelos cargados, versiones, etiquetas y cultivos cubiertos |
+| `POST` | `/inferencia` | Token\* | Análisis de una fotografía |
 
 \* Solo si `TOKEN_SERVICIO` está configurado: `Authorization: Bearer <TOKEN_SERVICIO>`.
 
 ### `POST /inferencia`
 
-Pedido:
+**Solicitud**
 
 ```json
 {
   "imagen": "data:image/jpeg;base64,/9j/4AAQ...",
   "formato": "jpg",
-  "cultivo": "Maíz",
+  "cultivo": "Soja",
   "tipoMuestra": "PLANTA",
-  "origen": "MUESTRA_MONITOREO"
+  "origen": "MUESTRA_MONITOREO",
+  "observaciones": "Manchas en hojas del tercio medio"
 }
 ```
 
-| Campo | Obligatorio | Valores |
+| Campo | Requerido | Descripción |
 |---|---|---|
-| `imagen` | Sí | Data URL o base64 de una imagen JPG, PNG o WEBP. **No se aceptan URLs remotas** (evita SSRF) |
-| `formato` | No | Texto informativo (`jpg`, `png`…) |
-| `cultivo` | No (recomendado) | Cultivo del lote. Si el modelo reconoce otro cultivo, el resultado es `INCONCLUSO` |
-| `tipoMuestra` | No | `PLANTA` (defecto), `CULTIVO`, `SUELO` |
-| `origen` | No | `MUESTRA_MONITOREO` (defecto), `EVIDENCIA_LABOR` |
+| `imagen` | Sí | Imagen JPG, PNG o WEBP como data URL o base64. No se aceptan URLs remotas |
+| `formato` | No | Formato informado por el cliente |
+| `cultivo` | Recomendado | Cultivo sembrado en el lote. Determina el modelo y permite detectar incoherencias |
+| `tipoMuestra` | No | `PLANTA` (por defecto) · `CULTIVO` · `SUELO` |
+| `origen` | No | `MUESTRA_MONITOREO` (por defecto) · `EVIDENCIA_LABOR` |
+| `observaciones` | No | Notas de campo; se usan como contexto en el análisis en línea |
 
-Respuesta `200` (siempre la misma forma; los campos de la afección van vacíos si no hay diagnóstico):
+**Respuesta `200`** (estructura constante; los campos de la afección quedan vacíos si no hay diagnóstico):
 
 ```json
 {
   "versionContrato": 2,
   "estado": "OK",
   "mensaje": "",
-  "afeccion": "Roya común del maíz",
-  "confianza": 0.851,
+  "afeccion": "Mancha ojo de rana de la soja",
+  "agente": "Cercospora sojina (hongo)",
+  "confianza": 0.874,
+  "tipoConfianza": "PROBABILIDAD",
   "severidad": null,
   "tipoDeteccion": "ENFERMEDAD",
-  "cultivo": "Maíz",
-  "estadoPlanta": "Con síntomas compatibles con roya común del maíz.",
-  "agente": "Puccinia sorghi (hongo)",
+  "cultivo": "Soja",
+  "estadoPlanta": "Con síntomas compatibles con mancha ojo de rana de la soja.",
   "descripcion": "...",
   "sintomas": ["..."],
   "condiciones": ["..."],
   "consecuencias": ["..."],
   "alternativasControl": ["..."],
   "recomendaciones": "...",
-  "alternativas": [{ "etiqueta": "Corn___Gray_Leaf_Spot", "afeccion": "Mancha gris del maíz", "cultivo": "Maíz", "confianza": 0.13 }],
+  "alternativas": [{ "etiqueta": "Soybean___Septoria_Brown_Spot", "afeccion": "Mancha marrón de la soja", "cultivo": "Soja", "confianza": 0.07 }],
   "observaciones": ["Resultado probable generado por un modelo de IA: no es un diagnóstico confirmado. ..."],
-  "etiquetaModelo": "Corn___Common_Rust",
-  "modelo": { "id": "wambugu71/crop_leaf_diseases_vit", "version": "7d5b32b..." },
+  "etiquetaModelo": "Soybean___Frog_Eye_Leaf_Spot",
+  "origenAnalisis": "LOCAL",
+  "modelo": { "id": "modelos/sigagro-extensivos", "version": "local-..." },
   "calidadImagen": { "ancho": 960, "alto": 720, "formato": "JPEG", "brillo": 128.4, "nitidez": 310.2, "legible": true, "problemas": [] },
   "fuenteInformacion": "...",
-  "tiempoProcesamientoMs": 301
+  "tiempoProcesamientoMs": 214
 }
 ```
 
-Errores HTTP: `401` token inválido · `413` imagen demasiado grande · `422` pedido mal formado · `503` modelo todavía
-no cargado o con error.
+| Campo | Descripción |
+|---|---|
+| `estado` | Resultado del análisis (ver [Lógica de decisión](#lógica-de-decisión)) |
+| `confianza` | Valor entre 0 y 1. **No indica gravedad** |
+| `tipoConfianza` | `PROBABILIDAD` (salida softmax de un modelo local) o `ESTIMADA` (estimación del modelo en línea) |
+| `origenAnalisis` | `LOCAL` o `EN_LINEA` |
+| `severidad` | Siempre `null`: la gravedad la determina el Ingeniero Agrónomo |
+| `alternativas` | Otras clases consideradas, con su confianza. En un resultado `INCONCLUSO` incluyen la clase más probable |
+| `cultivoIndicado` | Cultivo informado en la solicitud (el sembrado en el lote) |
+| `cultivoNoCoincide` | `true` si en la foto se reconoce otro cultivo: el resultado se informa igual, con un aviso para confirmar o cambiar el lote |
+| `calidadImagen` | Medidas de calidad y problemas detectados en la foto |
 
-Prueba rápida desde PowerShell:
+**Códigos de error:** `401` token inválido · `413` imagen demasiado grande · `422` solicitud mal formada ·
+`503` modelo no disponible o en carga.
+
+<details>
+<summary><b>Ejemplo de prueba desde PowerShell</b></summary>
 
 ```powershell
-$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\fotos\hoja-maiz.jpg"))
-$body = @{ imagen = "data:image/jpeg;base64,$b64"; cultivo = "Maíz"; tipoMuestra = "PLANTA" } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8000/inferencia -Method Post -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($body))
+$b64  = [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\fotos\hoja-soja.jpg"))
+$body = @{ imagen = "data:image/jpeg;base64,$b64"; cultivo = "Soja"; tipoMuestra = "PLANTA" } | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:8000/inferencia -Method Post `
+  -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($body))
+```
+</details>
+
+## Lógica de decisión
+
+```mermaid
+flowchart TD
+    A[Solicitud] --> B{¿Muestra de suelo?}
+    B -- Sí --> NS[NO_SOPORTADO]
+    B -- No --> C{¿Imagen válida?}
+    C -- No --> II[IMAGEN_INVALIDA / 413]
+    C -- Sí --> D{¿Calidad suficiente?}
+    D -- No --> IL[IMAGEN_ILEGIBLE]
+    D -- Sí --> E{¿Algún modelo local<br/>cubre el cultivo?}
+    E -- No --> L{¿Análisis en línea<br/>disponible?}
+    L -- Sí --> OL[Análisis en línea]
+    L -- No --> T[Clasificación con todos los modelos locales]
+    E -- Sí --> F[Clasificación con el modelo del cultivo]
+    T --> G
+    F --> G{¿Confianza ≥ umbral<br/>y margen suficiente?}
+    G -- Sí --> OK[OK · diagnóstico probable]
+    G -- No --> H{¿Análisis en línea<br/>disponible?}
+    H -- Sí --> OL
+    H -- No --> IN[INCONCLUSO]
+    OK --> K{¿Cultivo reconocido = cultivo del lote?}
+    K -- No --> AV[Aviso cultivoNoCoincide:<br/>confirmar o cambiar el lote]
+    OL --> J{¿Resultado concluyente?}
+    J -- Sí --> OK
+    J -- No --> IN
 ```
 
-## Cómo se analiza una imagen
-
-```
-Pedido ─► ¿SUELO? ─sí─► NO_SOPORTADO
-            │no
-            ▼
-       Decodificar ─error─► IMAGEN_INVALIDA      (no es JPG/PNG/WEBP, es una URL, está dañada)
-            │                413                 (supera MAX_BYTES)
-            ▼
-     Control de calidad ─falla─► IMAGEN_ILEGIBLE (resolución, oscura, sobreexpuesta, desenfocada)
-            │
-            ▼
-   ¿Cultivo cubierto? ─no─► NO_SOPORTADO         (p. ej. soja, girasol)
-            │sí
-            ▼
-     Clasificación (ViT, softmax)
-            │
-            ├─ clase "Invalid" con confianza alta ─► IMAGEN_INVALIDA (no parece una hoja)
-            ├─ confianza < UMBRAL_CONFIANZA ───────► INCONCLUSO
-            ├─ 1ª − 2ª clase < MARGEN_MINIMO ──────► INCONCLUSO
-            ├─ cultivo reconocido ≠ indicado ──────► INCONCLUSO
-            ▼
-           OK  (diagnóstico probable + información de referencia + alternativas)
-```
-
-| Estado | Significado | Qué hace SIGAgro |
+| Estado | Significado | Tratamiento en SIGAgro |
 |---|---|---|
-| `OK` | Diagnóstico probable | Queda `PENDIENTE_VALIDACION` con gravedad `SIN_DETERMINAR` |
-| `INCONCLUSO` | El modelo respondió pero no identificó con seguridad | Pide una nueva foto o la revisión del Ingeniero; las clases consideradas se muestran solo como alternativas |
-| `IMAGEN_INVALIDA` | No es una imagen válida o no es una hoja | Pide otra foto |
-| `IMAGEN_ILEGIBLE` | Calidad insuficiente (se indica el motivo en `calidadImagen.problemas`) | Pide otra foto, de cerca, con luz y enfocada |
-| `NO_SOPORTADO` | Muestra de suelo o cultivo no cubierto | Queda para evaluación del Ingeniero o laboratorio |
+| `OK` | Diagnóstico probable | Queda `PENDIENTE_VALIDACION`, con gravedad `SIN_DETERMINAR` |
+| `INCONCLUSO` | No se identificó con seguridad suficiente | Se solicita otra foto o la revisión del Ingeniero Agrónomo |
+| `IMAGEN_INVALIDA` | El archivo no es una imagen válida o no muestra una hoja analizable | Se solicita otra foto |
+| `IMAGEN_ILEGIBLE` | Resolución, iluminación o enfoque insuficientes | Se solicita otra foto, indicando el problema |
+| `NO_SOPORTADO` | Muestra de suelo | Queda para evaluación profesional o de laboratorio |
 
-## Enfermedades que reconoce
+Cuando el cultivo reconocido en la foto no es el sembrado en el lote, el estado sigue siendo el del análisis (por
+ejemplo `OK`) y la respuesta lleva `cultivoNoCoincide: true`. SIGAgro muestra el aviso "¿Estás seguro de que es este
+lote?" con las opciones de confirmarlo o cambiarlo (`PATCH /api/diagnostico-ia/diagnosticos/:id/lote`), y en ese caso
+vuelve a analizar la foto con el cultivo del lote correcto.
 
-| Cultivo | Clases |
+## Principios de seguridad agronómica
+
+1. **Diagnóstico probable, no confirmado.** Toda respuesta `OK` incluye la advertencia correspondiente y requiere la
+   validación del Ingeniero Agrónomo.
+2. **Sin estimación de gravedad.** `severidad` es siempre `null`.
+3. **Sin productos ni dosis.** La información de referencia describe solo medidas de manejo generales. Las respuestas
+   en línea se filtran para descartar cualquier frase con dosis. Hay pruebas automáticas que lo verifican.
+4. **Confianza transparente.** Se informa sin ajustes y se distingue la probabilidad de un modelo local de la
+   estimación de un modelo en línea.
+5. **Ante la duda, `INCONCLUSO`.** En ese caso no se informan afección, síntomas ni recomendaciones.
+
+## Análisis en línea
+
+El análisis en línea amplía la cobertura a cualquier cultivo mediante un modelo multimodal de Anthropic (Claude).
+Es **opcional**: sin clave o sin conexión, el servicio funciona solo con los modelos locales.
+
+| Aspecto | Comportamiento |
 |---|---|
-| Maíz | Roya común (*Puccinia sorghi*) · Mancha gris · Sano |
-| Trigo | Roya anaranjada · Roya amarilla · Sano |
-| Papa | Tizón temprano · Tizón tardío · Sano |
-| Arroz | Mancha parda · Piricularia (quemado) · Sano |
-| — | `Invalid`: la imagen no es una hoja analizable |
+| Cuándo se usa | Cultivo no cubierto por los modelos locales, o resultado local `INCONCLUSO` / imagen no reconocida como hoja |
+| Cuándo no se usa | Muestras de suelo, fotos ilegibles y resultados locales concluyentes (sin costo adicional) |
+| Formato | Salida estructurada con esquema JSON fijo, validada antes de usarse |
+| Fallos | Sin conexión, clave inválida o límite de uso: se conserva el resultado local |
+| Respaldo | Si el modelo declina un pedido, la API lo reintenta automáticamente en un modelo alternativo |
+| Privacidad | Se envían la foto (recomprimida, máx. 1568 px), el cultivo, el tipo de muestra y las observaciones. No se envían datos personales |
+| Costo | Variable según el uso; estimado en unos centavos de dólar por foto |
 
-La información de referencia de cada clase (agente, síntomas, condiciones predisponentes, consecuencias y
-alternativas de control generales) está en `app/conocimiento.py`.
+Para habilitarlo, crear una clave en <https://console.anthropic.com>, asignarla a `ANTHROPIC_API_KEY` en `.env` y
+reiniciar el servicio. `GET /salud` informa `"enLinea": { "habilitado": true, ... }`.
 
-## Reglas de seguridad agronómica
+## Modelo `sigagro-extensivos`
 
-- `confianza` es la **probabilidad softmax del modelo**, sin ajustes. **No es la gravedad.**
-- El modelo **no estima la gravedad**: `severidad` es siempre `null`; la determina el Ingeniero Agrónomo al validar.
-- Un `OK` es un diagnóstico **probable**; solo pasa a confirmado cuando lo valida el Ingeniero en SIGAgro.
-- La información de referencia **no nombra productos ni dosis**. Los productos y dosis salen del catálogo
-  fitosanitario de SIGAgro (cargado desde etiquetas oficiales SENASA) y de la receta del Ingeniero. Hay un test que
-  lo verifica (`test_ninguna_recomendacion_incluye_dosis`).
-- En un resultado no concluyente no se informa afección, síntomas ni recomendaciones.
+Modelo local para **soja, girasol y maní**, entrenado en este proyecto sobre un Vision Transformer liviano ya
+especializado en hojas de cultivos. Se mantiene fijo su extractor de características y se entrena la capa de
+clasificación con las clases nuevas (*linear probing*), técnica que permite entrenar en una computadora sin placa de
+video. El proceso es reproducible y está documentado en [`entrenamiento/`](entrenamiento/).
 
-## Limitaciones del modelo
+| Aspecto | Detalle |
+|---|---|
+| Modelo base | `wambugu71/crop_leaf_diseases_vit` (ViT tiny, licencia MIT) |
+| Datos | ~11.900 imágenes de cuatro conjuntos públicos CC BY 4.0 (ver [`entrenamiento/FUENTES.md`](entrenamiento/FUENTES.md)) |
+| Técnica | Extractor fijo + capa de clasificación entrenada, con variantes de giro y recorte de cada foto |
+| División | 80 % entrenamiento · 10 % validación · 10 % prueba (estratificada, semilla fija) |
+| Resultado | **78,7 % de acierto** sobre 1.087 fotos de prueba nunca vistas (F1 macro 76,6 %) |
+| Métricas | Precisión, sensibilidad y F1 por clase en [`modelos/sigagro-extensivos/METRICAS.md`](modelos/sigagro-extensivos/METRICAS.md) |
 
-- **No cubre soja, girasol ni otros cultivos**, ni plagas, malezas o deficiencias nutricionales.
-- Fue entrenado con imágenes de datasets públicos (fotos de laboratorio). En fotos de campo puede confundir cultivos
-  con confianza alta: en pruebas, una hoja de maíz sana salió como "trigo sano" al 92 % y una roya de trigo como
-  "roya de maíz" al 95 %. Por eso conviene **indicar siempre el cultivo**: si no coincide, el resultado es
-  `INCONCLUSO`.
-- Para uso productivo conviene entrenar un modelo propio con fotos locales y reemplazarlo
-  (ver [Cambiar el modelo](#cambiar-el-modelo)).
+**Resultados por cultivo (conjunto de prueba):**
+
+| Cultivo | Clases con mejor desempeño | Clases a mejorar |
+|---|---|---|
+| Girasol | Mildiu (F1 94 %), podredumbre gris (100 %), sano (95 %) | — |
+| Maní | Viruela tardía (91 %), sano (83 %), roya (78 %) | Viruela temprana (74 %), deficiencia nutricional (74 %) |
+| Soja | Vaquita (85 %), sana (80 %), mosaico (80 %), roya (71 %) | Mancha ojo de rana (35 %) y mancha marrón (43 %): pocas fotos de entrenamiento; orugas (66 %) |
+
+Las clases con pocas fotos son las más débiles: el umbral de confianza y el margen mínimo evitan informar como
+probable un resultado dudoso, y conviene sumar fotos propias de esas afecciones y reentrenar.
+
+**Reproducir el entrenamiento:**
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-entrenamiento.txt --extra-index-url https://download.pytorch.org/whl/cpu
+.\.venv\Scripts\python.exe -m entrenamiento.preparar_datos    # descarga y prepara las imágenes (~9,6 GB de descarga)
+.\.venv\Scripts\python.exe -m entrenamiento.entrenar          # entrena, evalúa y guarda en modelos/sigagro-extensivos (~1 h en CPU)
+```
+
+**Mejorarlo con fotos propias** (recomendado para uso productivo): agregar imágenes identificadas por un Ingeniero
+Agrónomo en `entrenamiento/datos/<Etiqueta>/`, volver a entrenar y revisar las métricas. Para incorporar una clase
+nueva, agregar además su ficha en `app/conocimiento.py`.
+
+## Limitaciones conocidas
+
+- **Origen de los datos.** Los modelos locales se entrenaron con imágenes de otros países (India, Brasil, Bangladesh)
+  y, en el caso del modelo principal, con fotos de laboratorio. La precisión con fotos de lotes argentinos puede ser
+  menor que la medida en pruebas.
+- **Confusión entre cultivos.** En pruebas de campo, el modelo principal clasificó con alta confianza una hoja de maíz
+  como trigo. Por eso el servicio compara lo reconocido con el cultivo del lote y avisa cuando no coinciden.
+- **Cultivos no cubiertos sin análisis en línea.** Se analizan con todos los modelos locales y se informa el resultado
+  más seguro, con el aviso de cultivo distinto: es una referencia que debe confirmar el Ingeniero Agrónomo.
+- **Afecciones no incluidas.** Enfermedades relevantes en Argentina que no figuran en los datos (por ejemplo,
+  *Verticillium* o *Sclerotinia* en girasol) no pueden ser reconocidas por los modelos locales.
+- **Sin estimación de incidencia ni gravedad**, por diseño.
 
 ## Despliegue con Docker
 
-Para un servidor Linux o en la nube. El modelo se descarga **al construir la imagen**, así que en ejecución no
-necesita internet (`HF_HUB_OFFLINE=1`).
+La imagen incluye los modelos, por lo que en ejecución no requiere internet (salvo para el análisis en línea).
 
 ```bash
 docker build -t sigagro-ia .
 docker run -d --name sigagro-ia --restart unless-stopped \
   -p 127.0.0.1:8000:8000 \
-  -e TOKEN_SERVICIO=<token-largo-y-secreto> \
+  -e TOKEN_SERVICIO=<token-secreto> \
+  -e ANTHROPIC_API_KEY=<clave-opcional> \
   sigagro-ia
 curl http://127.0.0.1:8000/salud
 ```
 
-- Publicar el puerto solo en `127.0.0.1` (o en la red interna de Docker): la IA no debe quedar expuesta.
-- Reservar al menos **2 GB de RAM**; en planes de 512 MB el modelo no carga.
-- La guía completa del sistema (base de datos, backend, frontend, Nginx y HTTPS) está en `DESPLIEGUE.md`, en la
-  carpeta raíz de SIGAgro.
+- Publicar el puerto solo en `127.0.0.1` o en una red interna: el servicio no debe exponerse a internet.
+- Reservar al menos 2 GB de RAM.
+- La guía de despliegue del sistema completo (base de datos, backend, frontend, proxy y HTTPS) está en
+  `DESPLIEGUE.md`, en la carpeta raíz de SIGAgro.
 
-## Tests
+## Pruebas
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Usan un **clasificador falso**, así que no descargan el modelo y corren en segundos. Cubren: resultado `OK` sin
-gravedad, ausencia de dosis, baja confianza y clases parejas → `INCONCLUSO`, cultivo distinto o no cubierto, muestra
-de suelo, imagen inválida / no imagen / formato no admitido, rechazo de URLs remotas, imágenes ilegibles (pequeña,
-oscura, sobreexpuesta, desenfocada), límite de tamaño (413), token de servicio (401), modelo no cargado (503) e
-información del modelo.
+La suite (37 pruebas) usa clasificadores y analizadores simulados: no descarga modelos, no requiere conexión y no
+genera costos.
+
+| Archivo | Cobertura |
+|---|---|
+| `tests/test_api.py` | Estados del análisis, umbral y margen, coherencia de cultivo, calidad de imagen, rechazo de URLs remotas, límite de tamaño, token y modelo no disponible |
+| `tests/test_modelos_adicionales.py` | Selección del modelo según el cultivo y cultivos cubiertos |
+| `tests/test_en_linea.py` | Análisis en línea: uso solo cuando corresponde, filtrado de dosis, baja confianza, cultivo distinto, fallos de conexión |
 
 ## Estructura del proyecto
 
 ```
 SIGAgro-IA/
 ├── app/
-│   ├── main.py          # API FastAPI: /salud, /modelo, /inferencia, token y ciclo de vida (carga del modelo)
-│   ├── analisis.py      # Reglas de decisión: estados, umbral, margen, cultivo, alternativas
-│   ├── imagenes.py      # Decodificación segura de la imagen y control de calidad (tamaño, brillo, nitidez)
-│   ├── modelo.py        # Carga del clasificador de Hugging Face (con revisión fija)
-│   ├── conocimiento.py  # Información de referencia por clase y normalización de cultivos
-│   └── config.py        # Variables de entorno
-├── tests/test_api.py    # Tests con clasificador falso
-├── instalar.ps1         # Instalación del entorno en Windows (venv, dependencias, .env, modelo)
-├── iniciar.ps1          # Inicio en Windows (carga .env)
-├── Dockerfile           # Imagen para despliegue (modelo incluido)
-├── .env.example         # Configuración de referencia
-├── requirements.txt     # Dependencias de ejecución
-└── requirements-dev.txt # + pytest y httpx
+│   ├── main.py              API (FastAPI): endpoints, autenticación y carga de modelos
+│   ├── analisis.py          Lógica de decisión y armado de la respuesta
+│   ├── en_linea.py          Análisis en línea (Claude): esquema, consulta y filtrado
+│   ├── modelo.py            Carga de modelos locales (principal y adicionales)
+│   ├── imagenes.py          Decodificación segura y control de calidad de la imagen
+│   ├── conocimiento.py      Fichas de referencia por clase y normalización de cultivos
+│   └── config.py            Configuración por variables de entorno
+├── entrenamiento/
+│   ├── preparar_datos.py    Descarga y preparación de imágenes
+│   ├── entrenar.py          Entrenamiento, evaluación y exportación del modelo
+│   └── FUENTES.md           Fuentes de datos, licencias y limitaciones
+├── modelos/
+│   └── sigagro-extensivos/  Modelo entrenado y sus métricas
+├── tests/                   Pruebas automatizadas
+├── instalar.ps1             Instalación en Windows
+├── iniciar.ps1              Inicio en Windows (carga .env)
+├── Dockerfile               Imagen de despliegue
+├── .env.example             Plantilla de configuración
+├── requirements.txt         Dependencias de ejecución
+├── requirements-dev.txt     + dependencias de prueba
+└── requirements-entrenamiento.txt  + dependencias de entrenamiento
 ```
-
-## Cambiar el modelo
-
-1. Entrenar o elegir un modelo `image-classification` de Hugging Face (o una carpeta local con el modelo).
-2. Configurar `MODELO_ID` (y `MODELO_REVISION` con el commit, para que los resultados sean reproducibles).
-3. Agregar en `app/conocimiento.py` una entrada `InfoClase` por cada etiqueta nueva (cultivo, tipo `ENFERMEDAD` /
-   `SANO` / `INVALIDA`, nombre en español e información de referencia **sin productos ni dosis**). Una etiqueta sin
-   entrada se informa con tipo `DESCONOCIDO` y sin información de referencia.
-4. Si se agrega un cultivo, sumarlo a la normalización de cultivos del mismo archivo.
-5. Correr los tests y verificar `GET /modelo` (`cultivosCubiertos`).
 
 ## Solución de problemas
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| SIGAgro muestra "IA no disponible" (`SIN_CONEXION`) | El servicio no está corriendo o `AI_SERVICE_URL` es incorrecta | Iniciar con `.\iniciar.ps1`; revisar `.env` del backend y reiniciarlo |
-| `AUTENTICACION` / 401 | `AI_SERVICE_TOKEN` del backend ≠ `TOKEN_SERVICIO` | Poner el mismo valor en ambos y reiniciar los dos |
-| `TIEMPO_AGOTADO` | Equipo lento (la primera inferencia es la más lenta) | Subir `AI_SERVICE_TIMEOUT_MS` a 30000–60000 |
-| `/salud` responde `MODELO_NO_DISPONIBLE` o 503 | Sin internet en el primer arranque, poca RAM o todavía cargando | Esperar unos segundos; dar internet la primera vez; ≥2 GB de RAM; ver el campo `error` |
-| Siempre `NO_SOPORTADO` | El cultivo del lote no está cubierto | Limitación del modelo: solo maíz, trigo, papa y arroz |
-| Muchos `INCONCLUSO` | Fotos lejanas, con varias hojas o fondo | Fotografiar una sola hoja con síntomas, de cerca, con luz natural |
-| `No existe el entorno virtual` al iniciar | Falta la instalación | Ejecutar `.\instalar.ps1` |
+| SIGAgro muestra "IA no disponible" (`SIN_CONEXION`) | El servicio no está en ejecución o `AI_SERVICE_URL` es incorrecta | Iniciar el servicio; verificar `AI_SERVICE_URL=http://127.0.0.1:8000` y reiniciar el backend |
+| `AUTENTICACION` o HTTP 401 | El token del backend no coincide con `TOKEN_SERVICIO` | Usar el mismo valor en ambos `.env` y reiniciar ambos servicios |
+| `TIEMPO_AGOTADO` | Equipo lento o análisis en línea demorado | Aumentar `AI_SERVICE_TIMEOUT_MS` en el backend |
+| `/salud` informa `MODELO_NO_DISPONIBLE` | Primera ejecución sin internet, memoria insuficiente o carga en curso | Esperar unos segundos; revisar el campo `error`; asegurar conexión en la instalación |
+| Aviso "la foto no parece ser del cultivo del lote" | El lote elegido no es el de la foto, o el modelo confundió el cultivo | Cambiar el lote desde el aviso; si el lote es correcto, confirmarlo (el Ingeniero lo verá al validar) |
+| `INCONCLUSO` frecuente | Fotos lejanas, varias hojas o fondo predominante | Fotografiar una sola hoja con síntomas, de cerca, con luz natural |
+| El análisis en línea no se activa | Falta `ANTHROPIC_API_KEY` o `EN_LINEA=no` | Revisar `.env`, reiniciar el servicio y consultar `GET /salud` |
+| `No existe el entorno virtual` | Instalación incompleta | Ejecutar `instalar.ps1` |
 
----
+Desde la carpeta raíz de SIGAgro, `verificar-ia.ps1` diagnostica la instalación, la configuración y el estado del
+servicio.
 
-Proyecto académico — Seminario Integrador. Modelo de clasificación de terceros publicado en Hugging Face
-([`wambugu71/crop_leaf_diseases_vit`](https://huggingface.co/wambugu71/crop_leaf_diseases_vit)); revisar su licencia
-antes de cualquier uso comercial.
+## Créditos y licencias
+
+- **Modelo principal:** [`wambugu71/crop_leaf_diseases_vit`](https://huggingface.co/wambugu71/crop_leaf_diseases_vit), licencia MIT.
+- **Datos de entrenamiento de `sigagro-extensivos`:** conjuntos publicados por Project-AgML bajo licencia
+  CC BY 4.0; atribución completa en [`entrenamiento/FUENTES.md`](entrenamiento/FUENTES.md).
+- **Análisis en línea:** API de Anthropic (Claude), sujeta a sus condiciones de uso.
+
+Proyecto académico desarrollado en el marco del Seminario Integrador. La información agronómica es de referencia
+general y no reemplaza el criterio profesional.

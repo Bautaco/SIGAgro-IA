@@ -6,3 +6,5 @@ numpy>=1.26,<3
 transformers>=4.44,<5
 # PyTorch CPU: instalar con  --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.4,<3
+# Análisis en línea (opcional, con ANTHROPIC_API_KEY)
+anthropic>=1.17,<2

@@ -24,6 +24,19 @@ CONTROL_FUNGICO_GENERAL = [
     "Si se supera el umbral de daño económico, evaluar un fungicida registrado para el cultivo y la enfermedad, según la etiqueta y la receta del Ingeniero Agrónomo.",
 ]
 
+CONTROL_PLAGAS_GENERAL = [
+    "Monitorear el lote (paño vertical, conteo por metro o porcentaje de defoliación) para estimar la densidad de la plaga.",
+    "Comparar con el umbral de daño económico para el estado fenológico del cultivo antes de decidir un control.",
+    "Preservar los enemigos naturales y evaluar alternativas de control biológico.",
+    "Si se supera el umbral, evaluar un insecticida registrado para el cultivo y la plaga, según la etiqueta y la receta del Ingeniero Agrónomo.",
+]
+
+CONTROL_VIRUS_GENERAL = [
+    "Usar semilla sana de origen conocido y cultivares con mejor comportamiento.",
+    "Monitorear los insectos vectores (pulgones) y controlar malezas hospederas.",
+    "No existe control curativo para las virosis: el manejo es preventivo.",
+]
+
 
 @dataclass(frozen=True)
 class InfoClase:
@@ -49,6 +62,14 @@ SINONIMOS_CULTIVO = {
     "potato": "Papa",
     "arroz": "Arroz",
     "rice": "Arroz",
+    "soja": "Soja",
+    "soya": "Soja",
+    "soybean": "Soja",
+    "girasol": "Girasol",
+    "sunflower": "Girasol",
+    "mani": "Maní",
+    "peanut": "Maní",
+    "groundnut": "Maní",
 }
 
 CLASES: dict[str, InfoClase] = {
@@ -205,6 +226,202 @@ CLASES: dict[str, InfoClase] = {
         control=CONTROL_FUNGICO_GENERAL,
     ),
     "Rice___Healthy": InfoClase(cultivo="Arroz", tipo="SANO", nombre="Arroz sin síntomas visibles"),
+    # --- Modelo sigagro-extensivos (soja, girasol, maní): ver entrenamiento/ ---
+    "Soybean___Frog_Eye_Leaf_Spot": InfoClase(
+        cultivo="Soja",
+        tipo="ENFERMEDAD",
+        nombre="Mancha ojo de rana de la soja",
+        agente="Cercospora sojina (hongo)",
+        descripcion="Enfermedad foliar que se transmite por semilla y sobrevive en el rastrojo.",
+        sintomas=[
+            "Manchas circulares a angulares de 1 a 5 mm, con centro gris a castaño claro.",
+            "Borde bien definido castaño rojizo a púrpura (aspecto de ojo).",
+            "En ataques intensos las manchas se unen y la hoja se seca.",
+        ],
+        condiciones=[
+            "Clima cálido y húmedo, lluvias frecuentes y rocío prolongado.",
+            "Rastrojo de soja infectado y semilla de origen dudoso.",
+            "Cultivares susceptibles.",
+        ],
+        consecuencias=["Defoliación anticipada y pérdidas de rendimiento en cultivares susceptibles."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Soybean___Rust": InfoClase(
+        cultivo="Soja",
+        tipo="ENFERMEDAD",
+        nombre="Roya de la soja",
+        agente="Phakopsora pachyrhizi (hongo, roya asiática)",
+        descripcion="Enfermedad foliar de rápido avance que puede defoliar el cultivo en pocas semanas.",
+        sintomas=[
+            "Lesiones pequeñas castañas a castaño rojizas, primero en las hojas inferiores.",
+            "Pústulas (uredinios) en el envés de la hoja, visibles con lupa.",
+            "Amarillamiento y caída prematura de hojas.",
+        ],
+        condiciones=[
+            "Mojado foliar prolongado y alta humedad.",
+            "Temperaturas moderadas.",
+            "Llegada de esporas desde zonas con la enfermedad (seguir las alertas regionales).",
+        ],
+        consecuencias=["Defoliación prematura, menor llenado y peso de granos."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Soybean___Septoria_Brown_Spot": InfoClase(
+        cultivo="Soja",
+        tipo="ENFERMEDAD",
+        nombre="Mancha marrón de la soja",
+        agente="Septoria glycines (hongo)",
+        descripcion="Enfermedad de fin de ciclo que avanza desde las hojas inferiores hacia arriba.",
+        sintomas=[
+            "Manchas pequeñas, irregulares, castaño oscuras.",
+            "Halo amarillento alrededor de las manchas y amarillamiento de la hoja.",
+            "Comienza en el estrato inferior del canopeo.",
+        ],
+        condiciones=["Clima cálido y húmedo.", "Rastrojo de soja en superficie (soja sobre soja)."],
+        consecuencias=["Defoliación anticipada y pérdidas de rendimiento cuando sube por el canopeo."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Soybean___Mosaic": InfoClase(
+        cultivo="Soja",
+        tipo="ENFERMEDAD",
+        nombre="Mosaico de la soja (virosis)",
+        agente="Virus del mosaico de la soja (SMV), transmitido por semilla y pulgones",
+        descripcion="Virosis que deforma las hojas y reduce el crecimiento.",
+        sintomas=[
+            "Mosaico de zonas verde claro y verde oscuro en las hojas.",
+            "Hojas rugosas, abolladas o deformadas.",
+            "Plantas de menor porte.",
+        ],
+        condiciones=["Semilla infectada y presencia de pulgones vectores."],
+        consecuencias=["Menor crecimiento y rendimiento; posible manchado de la semilla."],
+        control=CONTROL_VIRUS_GENERAL,
+    ),
+    "Soybean___Defoliating_Caterpillars": InfoClase(
+        cultivo="Soja",
+        tipo="PLAGA",
+        nombre="Orugas defoliadoras de la soja",
+        agente="Larvas de lepidópteros (p. ej. oruga medidora Rachiplusia nu, oruga de las leguminosas Anticarsia gemmatalis)",
+        descripcion="Larvas que consumen el área foliar; el daño se evalúa como porcentaje de defoliación.",
+        sintomas=[
+            "Hojas con perforaciones o comidas desde el borde.",
+            "Presencia de orugas o excrementos sobre las hojas.",
+        ],
+        condiciones=["Veranos cálidos; mayor riesgo durante la floración y el llenado de granos."],
+        consecuencias=["Pérdida de área foliar que, en estados reproductivos, reduce el rendimiento."],
+        control=CONTROL_PLAGAS_GENERAL,
+    ),
+    "Soybean___Diabrotica_speciosa": InfoClase(
+        cultivo="Soja",
+        tipo="PLAGA",
+        nombre="Vaquita de San Antonio (Diabrotica speciosa)",
+        agente="Diabrotica speciosa (coleóptero; el adulto come hojas y la larva ataca raíces)",
+        descripcion="Coleóptero verde con manchas amarillas; el adulto produce perforaciones en las hojas.",
+        sintomas=[
+            "Perforaciones pequeñas y redondeadas en las hojas.",
+            "Presencia de adultos verdes con manchas amarillas sobre el cultivo.",
+        ],
+        condiciones=["Mayor actividad con temperaturas cálidas, en especial en cultivos jóvenes."],
+        consecuencias=["Defoliación; en cultivos recién emergidos puede afectar el stand de plantas."],
+        control=CONTROL_PLAGAS_GENERAL,
+    ),
+    "Soybean___Healthy": InfoClase(cultivo="Soja", tipo="SANO", nombre="Soja sin síntomas visibles"),
+    "Sunflower___Downy_Mildew": InfoClase(
+        cultivo="Girasol",
+        tipo="ENFERMEDAD",
+        nombre="Mildiu del girasol",
+        agente="Plasmopara halstedii (oomicete)",
+        descripcion="Enfermedad sistémica que infecta la plántula desde el suelo y produce plantas enanas.",
+        sintomas=[
+            "Clorosis que acompaña las nervaduras de las hojas.",
+            "Eflorescencia blanca en el envés de las hojas en condiciones húmedas.",
+            "Plantas enanas con capítulos pequeños y erectos.",
+        ],
+        condiciones=[
+            "Suelo húmedo o encharcado durante la siembra y la emergencia.",
+            "Lotes con antecedentes de la enfermedad (inóculo en el suelo).",
+        ],
+        consecuencias=["Pérdida de plantas y de rendimiento; las plantas infectadas no producen o producen poco."],
+        control=[
+            "Usar híbridos con resistencia o tolerancia al mildiu.",
+            "Rotación de cultivos y evitar lotes con antecedentes y mal drenaje.",
+            "Consultar con el Ingeniero Agrónomo el tratamiento de semilla registrado para el cultivo.",
+        ],
+    ),
+    "Sunflower___Gray_Mold": InfoClase(
+        cultivo="Girasol",
+        tipo="ENFERMEDAD",
+        nombre="Podredumbre gris del girasol",
+        agente="Botrytis cinerea (hongo)",
+        descripcion="Enfermedad favorecida por la humedad que afecta hojas y capítulos.",
+        sintomas=[
+            "Manchas necróticas castañas en hojas o en el capítulo.",
+            "Moho gris pulverulento sobre los tejidos afectados.",
+        ],
+        condiciones=["Alta humedad, lluvias y temperaturas templadas, en especial desde la floración."],
+        consecuencias=["Podredumbre de tejidos y capítulos con pérdida de rendimiento y calidad."],
+        control=[
+            "Monitorear el lote desde la floración, sobre todo con pronóstico de lluvias.",
+            "Densidad y fecha de siembra que favorezcan la aireación del cultivo.",
+            "Consultar al Ingeniero Agrónomo las alternativas registradas para el cultivo.",
+        ],
+    ),
+    "Sunflower___Healthy": InfoClase(cultivo="Girasol", tipo="SANO", nombre="Girasol sin síntomas visibles"),
+    "Groundnut___Early_Leaf_Spot": InfoClase(
+        cultivo="Maní",
+        tipo="ENFERMEDAD",
+        nombre="Viruela temprana del maní",
+        agente="Passalora arachidicola (= Cercospora arachidicola, hongo)",
+        descripcion="Enfermedad foliar frecuente del maní, favorecida por el rastrojo infectado.",
+        sintomas=[
+            "Manchas circulares castaño claras a oscuras, más visibles en el haz de la hoja.",
+            "Halo amarillento alrededor de las manchas.",
+        ],
+        condiciones=["Alta humedad, lluvias y temperaturas cálidas; maní sobre maní."],
+        consecuencias=["Defoliación, menor llenado de cajas y pérdidas de rendimiento."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Groundnut___Late_Leaf_Spot": InfoClase(
+        cultivo="Maní",
+        tipo="ENFERMEDAD",
+        nombre="Viruela tardía del maní",
+        agente="Nothopassalora personata (= Cercosporidium personatum, hongo)",
+        descripcion="Viruela muy común en zonas maniseras; avanza rápido con clima húmedo.",
+        sintomas=[
+            "Manchas circulares castaño oscuras a casi negras.",
+            "Esporulación oscura en el envés de la hoja; halo amarillo poco marcado.",
+        ],
+        condiciones=["Alta humedad, lluvias frecuentes y temperaturas cálidas; rastrojo de maní."],
+        consecuencias=["Defoliación severa y pérdidas importantes de rendimiento."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Groundnut___Rust": InfoClase(
+        cultivo="Maní",
+        tipo="ENFERMEDAD",
+        nombre="Roya del maní",
+        agente="Puccinia arachidis (hongo)",
+        descripcion="Enfermedad foliar que forma pústulas anaranjadas y acelera el secado de las hojas.",
+        sintomas=[
+            "Pústulas anaranjadas a castaño rojizas en el envés de la hoja.",
+            "Las hojas se secan pero suelen quedar adheridas a la planta.",
+        ],
+        condiciones=["Alta humedad y temperaturas cálidas."],
+        consecuencias=["Pérdida de área foliar y menor rendimiento."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Groundnut___Nutrient_Deficiency": InfoClase(
+        cultivo="Maní",
+        tipo="DEFICIENCIA",
+        nombre="Síntomas compatibles con deficiencia nutricional (maní)",
+        descripcion="Amarillamiento o decoloración de hojas no causado por patógenos; la causa debe confirmarse a campo.",
+        sintomas=["Clorosis general o internerval de las hojas.", "Menor crecimiento de las plantas."],
+        condiciones=["Suelos con baja disponibilidad de nutrientes, pH extremo o problemas de nodulación."],
+        consecuencias=["Menor crecimiento y rendimiento si no se corrige la causa."],
+        control=[
+            "Confirmar la causa con análisis de suelo y de tejido vegetal.",
+            "Verificar la nodulación y la inoculación de la semilla.",
+            "Definir la corrección con el Ingeniero Agrónomo según el diagnóstico.",
+        ],
+    ),
+    "Groundnut___Healthy": InfoClase(cultivo="Maní", tipo="SANO", nombre="Maní sin síntomas visibles"),
     "Invalid": InfoClase(cultivo=None, tipo="INVALIDA", nombre="La imagen no corresponde a una hoja de cultivo analizable"),
 }
 

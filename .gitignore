@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
+
+# Entrenamiento: datos descargados, caché y salidas pesadas
+entrenamiento/datos/
+entrenamiento/.cache/
+entrenamiento/salida/
