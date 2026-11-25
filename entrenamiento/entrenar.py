@@ -98,6 +98,18 @@ def _acierto(cabeza: torch.nn.Linear, x: torch.Tensor, y: torch.Tensor) -> tuple
     return float((pred == y).float().mean()), pred.tolist()
 
 
+def copiar_clases_aprendidas(etiquetas: list[str], destino: Path) -> None:
+    """Copia junto al modelo la ficha mínima de las afecciones aprendidas de los Ingenieros que el modelo conoce."""
+    origen = Path(__file__).resolve().parent / "clases_aprendidas.json"
+    archivo = destino / "clases_aprendidas.json"
+    registro = json.loads(origen.read_text(encoding="utf-8")) if origen.exists() else {}
+    propias = {e: c for e, c in registro.items() if e in etiquetas}
+    if propias:
+        archivo.write_text(json.dumps(propias, indent=2, ensure_ascii=False), encoding="utf-8")
+    elif archivo.exists():
+        archivo.unlink()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variantes", type=int, default=2, help="Variantes con giro/recorte por foto de entrenamiento")
@@ -164,6 +176,7 @@ def main() -> None:
     DESTINO.mkdir(parents=True, exist_ok=True)
     modelo.save_pretrained(DESTINO)
     procesador.save_pretrained(DESTINO)
+    copiar_clases_aprendidas(etiquetas, DESTINO)
 
     reporte = classification_report(reales, pred, labels=list(range(len(etiquetas))), target_names=etiquetas, output_dict=True, zero_division=0)
     matriz = confusion_matrix(reales, pred, labels=list(range(len(etiquetas)))).tolist()

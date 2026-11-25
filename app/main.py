@@ -21,6 +21,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from .analisis import VERSION_CONTRATO, SolicitudDemasiadoGrande, analizar, cultivos_cubiertos
+from .conocimiento import info_de
 from .config import Config, cargar_config
 from .en_linea import CULTIVOS_ARGENTINA, AnalizadorEnLinea, crear_analizador
 from .modelo import GestorModelo
@@ -114,6 +115,13 @@ def crear_app(
             "umbralConfianza": config.umbral_confianza,
             "margenMinimo": config.margen_minimo,
             "estimaGravedad": False,
+            # Clases con ficha (nombre en español): el Ingeniero elige de esta lista al rectificar un diagnóstico,
+            # así la foto validada queda etiquetada para reentrenar
+            "clases": [
+                {"etiqueta": e, "nombre": i.nombre, "cultivo": i.cultivo, "tipo": i.tipo}
+                for e in sorted({e for m in [c, *gestor.adicionales] for e in m.etiquetas})
+                if (i := info_de(e)) and i.cultivo
+            ],
             "versionContrato": VERSION_CONTRATO,
         }
 

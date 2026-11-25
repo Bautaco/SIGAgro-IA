@@ -13,7 +13,9 @@ nombre crudo y sin información de referencia (nunca se inventa).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 FUENTE = "Referencia técnica general incluida en el servicio de IA de SIGAgro; debe validarla el Ingeniero Agrónomo."
 
@@ -70,6 +72,19 @@ SINONIMOS_CULTIVO = {
     "mani": "Maní",
     "peanut": "Maní",
     "groundnut": "Maní",
+    "sorgo": "Sorgo",
+    "sorghum": "Sorgo",
+    "poroto": "Poroto",
+    "porotos": "Poroto",
+    "frijol": "Poroto",
+    "bean": "Poroto",
+    "algodon": "Algodón",
+    "cotton": "Algodón",
+    "caña de azucar": "Caña de azúcar",
+    "cana de azucar": "Caña de azúcar",
+    "caña": "Caña de azúcar",
+    "cana": "Caña de azúcar",
+    "sugarcane": "Caña de azúcar",
 }
 
 CLASES: dict[str, InfoClase] = {
@@ -422,8 +437,402 @@ CLASES: dict[str, InfoClase] = {
         ],
     ),
     "Groundnut___Healthy": InfoClase(cultivo="Maní", tipo="SANO", nombre="Maní sin síntomas visibles"),
+    # --- Ampliación de sigagro-extensivos: más cultivos y enfermedades presentes en Argentina ---
+    "Corn___Northern_Leaf_Blight": InfoClase(
+        cultivo="Maíz",
+        tipo="ENFERMEDAD",
+        nombre="Tizón foliar del maíz",
+        agente="Exserohilum turcicum (hongo; antes Helminthosporium turcicum)",
+        descripcion="Enfermedad foliar que forma lesiones grandes y alargadas; sobrevive en el rastrojo de maíz.",
+        sintomas=[
+            "Lesiones elípticas grandes (de 2 a 15 cm), de color gris verdoso a castaño, con forma de cigarro.",
+            "Las lesiones comienzan en las hojas inferiores y avanzan hacia arriba.",
+            "Con humedad, las lesiones se cubren de un moho oscuro (esporulación).",
+        ],
+        condiciones=[
+            "Temperaturas moderadas (18 a 27 °C) con rocío o lluvias frecuentes.",
+            "Rastrojo de maíz en superficie y maíz sobre maíz.",
+            "Híbridos susceptibles.",
+        ],
+        consecuencias=[
+            "Pérdida de área foliar antes o durante el llenado de granos.",
+            "Pérdidas de rendimiento importantes si el ataque es temprano.",
+        ],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Corn___Fall_Armyworm": InfoClase(
+        cultivo="Maíz",
+        tipo="PLAGA",
+        nombre="Gusano cogollero del maíz",
+        agente="Spodoptera frugiperda (lepidóptero; daña la larva)",
+        descripcion="Principal plaga del maíz en Argentina; la larva se alimenta del cogollo y de las hojas en formación.",
+        sintomas=[
+            "Hojas con raspaduras transparentes («ventanitas») en plantas jóvenes.",
+            "Perforaciones irregulares en las hojas que se despliegan del cogollo.",
+            "Aserrín húmedo (excrementos) en el cogollo y presencia de larvas con una «Y» invertida en la cabeza.",
+        ],
+        condiciones=[
+            "Temperaturas cálidas; mayor presión en siembras tardías y de segunda.",
+            "Ataques más severos en los primeros estados vegetativos.",
+        ],
+        consecuencias=[
+            "Defoliación y daño del cogollo que reduce el crecimiento.",
+            "En ataques severos, pérdida de plantas y de rendimiento.",
+        ],
+        control=CONTROL_PLAGAS_GENERAL,
+    ),
+    "Wheat___Septoria": InfoClase(
+        cultivo="Trigo",
+        tipo="ENFERMEDAD",
+        nombre="Mancha de la hoja del trigo (septoriosis)",
+        agente="Zymoseptoria tritici (hongo; antes Septoria tritici)",
+        descripcion="Enfermedad foliar frecuente en la región triguera; el hongo sobrevive en el rastrojo de trigo.",
+        sintomas=[
+            "Manchas alargadas de color castaño, limitadas por las nervaduras.",
+            "Dentro de las manchas, puntos negros pequeños (picnidios), visibles a contraluz.",
+            "Avanza de las hojas inferiores a las superiores.",
+        ],
+        condiciones=[
+            "Temperaturas templadas y lluvias frecuentes (la lluvia salpica las esporas).",
+            "Trigo sobre trigo y rastrojo en superficie.",
+        ],
+        consecuencias=["Pérdida de área foliar verde y menor peso de los granos."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Wheat___Leaf_Blight": InfoClase(
+        cultivo="Trigo",
+        tipo="ENFERMEDAD",
+        nombre="Mancha borrosa del trigo",
+        agente="Bipolaris sorokiniana (hongo)",
+        descripcion="Enfermedad foliar favorecida por el calor y la humedad; también puede afectar raíces y granos.",
+        sintomas=[
+            "Manchas ovaladas de color castaño oscuro, de bordes difusos (borrosos).",
+            "Las manchas pueden rodearse de un halo amarillento y unirse entre sí.",
+        ],
+        condiciones=["Temperaturas cálidas con alta humedad, frecuentes al final del ciclo.", "Rastrojo de trigo y semilla infectada."],
+        consecuencias=["Secado anticipado de hojas y menor llenado de granos."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Wheat___Blast": InfoClase(
+        cultivo="Trigo",
+        tipo="ENFERMEDAD",
+        nombre="Brusone del trigo (piricularia)",
+        agente="Magnaporthe oryzae, patotipo Triticum (hongo; Pyricularia)",
+        descripcion="Enfermedad de la espiga presente en el NEA y el NOA; puede causar pérdidas graves en pocos días.",
+        sintomas=[
+            "Espigas blanqueadas total o parcialmente por encima del punto de ataque.",
+            "Lesión oscura en el raquis de la espiga.",
+            "Granos chuzos o ausentes en la parte afectada; en hojas, lesiones en forma de ojo.",
+        ],
+        condiciones=["Temperaturas altas y humedad durante la espigazón (lluvias, rocío prolongado)."],
+        consecuencias=["Pérdidas de rendimiento muy altas en años favorables.", "Menor calidad del grano."],
+        control=[
+            "Ajustar la fecha de siembra para evitar que la espigazón coincida con calor y humedad.",
+            "Usar semilla sana y, si hay, cultivares con mejor comportamiento.",
+            "Monitorear desde la espigazón; si el riesgo es alto, evaluar un fungicida registrado según la etiqueta y la receta del Ingeniero Agrónomo.",
+        ],
+    ),
+    "Potato___Virus": InfoClase(
+        cultivo="Papa",
+        tipo="ENFERMEDAD",
+        nombre="Síntomas compatibles con virosis de la papa",
+        agente="Virus de la papa (p. ej. PVY, PLRV) transmitidos por pulgones y por tubérculo semilla",
+        descripcion="Las virosis se transmiten por tubérculos semilla y por insectos vectores; no tienen control curativo.",
+        sintomas=[
+            "Mosaico (zonas verde claro y verde oscuro) y arrugado de las hojas.",
+            "Enrollamiento de las hojas hacia arriba o necrosis de nervaduras.",
+            "Plantas con menor crecimiento.",
+        ],
+        condiciones=["Tubérculo semilla infectado.", "Alta población de pulgones."],
+        consecuencias=["Menor rendimiento y degeneración de la semilla propia."],
+        control=CONTROL_VIRUS_GENERAL,
+    ),
+    "Soybean___Bacterial_Blight": InfoClase(
+        cultivo="Soja",
+        tipo="ENFERMEDAD",
+        nombre="Tizón bacteriano de la soja",
+        agente="Pseudomonas savastanoi pv. glycinea (bacteria)",
+        descripcion="Enfermedad bacteriana foliar favorecida por clima fresco y lluvias con viento.",
+        sintomas=[
+            "Manchas pequeñas y angulosas, al principio acuosas, que luego se vuelven castañas a negras.",
+            "Halo amarillo alrededor de las manchas.",
+            "Las manchas se unen y el tejido muerto se rompe, dejando la hoja rasgada.",
+        ],
+        condiciones=["Temperaturas frescas, lluvias con viento y heridas en las hojas.", "Semilla y rastrojo infectados."],
+        consecuencias=["Pérdida de área foliar; en general, daño moderado."],
+        control=[
+            "Usar semilla sana y cultivares con mejor comportamiento.",
+            "Rotación de cultivos y manejo del rastrojo.",
+            "Los fungicidas no controlan bacterias: definir el manejo con el Ingeniero Agrónomo.",
+        ],
+    ),
+    "Groundnut___Alternaria_Leaf_Spot": InfoClase(
+        cultivo="Maní",
+        tipo="ENFERMEDAD",
+        nombre="Mancha foliar por Alternaria (maní)",
+        agente="Alternaria spp. (hongo)",
+        descripcion="Enfermedad foliar que aparece sobre todo en hojas maduras y con estrés.",
+        sintomas=["Manchas castañas irregulares, a veces con anillos concéntricos y halo amarillo.", "Secado del borde y de la punta de los folíolos."],
+        condiciones=["Alta humedad y temperaturas templadas a cálidas.", "Plantas estresadas o al final del ciclo."],
+        consecuencias=["Defoliación y menor rendimiento si el ataque es intenso."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Bean___Angular_Leaf_Spot": InfoClase(
+        cultivo="Poroto",
+        tipo="ENFERMEDAD",
+        nombre="Mancha angular del poroto",
+        agente="Pseudocercospora griseola (hongo)",
+        descripcion="Una de las enfermedades foliares más importantes del poroto en el NOA.",
+        sintomas=[
+            "Manchas angulosas, limitadas por las nervaduras, de color gris a castaño.",
+            "En el envés, con humedad, se ve un moho oscuro.",
+            "En vainas, manchas redondeadas de borde rojizo.",
+        ],
+        condiciones=["Temperaturas moderadas y alternancia de períodos húmedos y secos.", "Semilla y rastrojo infectados."],
+        consecuencias=["Defoliación prematura y menor rendimiento."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Bean___Rust": InfoClase(
+        cultivo="Poroto",
+        tipo="ENFERMEDAD",
+        nombre="Roya del poroto",
+        agente="Uromyces appendiculatus (hongo)",
+        descripcion="Enfermedad foliar que forma pústulas y se dispersa por el viento.",
+        sintomas=[
+            "Pústulas pequeñas y redondeadas de color castaño rojizo, sobre todo en el envés.",
+            "Halo clorótico alrededor de las pústulas.",
+            "Las pústulas liberan un polvo color óxido al frotarlas.",
+        ],
+        condiciones=["Temperaturas moderadas con rocío prolongado o alta humedad."],
+        consecuencias=["Defoliación y menor llenado de granos."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Bean___Anthracnose": InfoClase(
+        cultivo="Poroto",
+        tipo="ENFERMEDAD",
+        nombre="Antracnosis del poroto",
+        agente="Colletotrichum lindemuthianum (hongo)",
+        descripcion="Enfermedad que se transmite por semilla y afecta hojas, tallos y vainas.",
+        sintomas=[
+            "Nervaduras ennegrecidas en el envés de las hojas.",
+            "En vainas, lesiones hundidas de color castaño oscuro con borde rojizo.",
+            "Lesiones alargadas y oscuras en tallos y pecíolos.",
+        ],
+        condiciones=["Temperaturas frescas a moderadas con alta humedad y lluvias.", "Semilla infectada."],
+        consecuencias=["Pérdida de rendimiento y de calidad comercial del grano."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Bean___Healthy": InfoClase(cultivo="Poroto", tipo="SANO", nombre="Poroto sin síntomas visibles"),
+    "Cotton___Bacterial_Blight": InfoClase(
+        cultivo="Algodón",
+        tipo="ENFERMEDAD",
+        nombre="Bacteriosis del algodón (mancha angular)",
+        agente="Xanthomonas citri pv. malvacearum (bacteria)",
+        descripcion="Enfermedad bacteriana que afecta hojas, tallos y cápsulas; se transmite por semilla.",
+        sintomas=[
+            "Manchas angulosas, acuosas al principio y luego castañas, limitadas por las nervaduras.",
+            "Lesiones que siguen las nervaduras (nervadura negra).",
+            "En cápsulas, manchas acuosas que pueden pudrir la fibra.",
+        ],
+        condiciones=["Temperaturas altas, lluvias con viento y alta humedad.", "Semilla y rastrojo infectados."],
+        consecuencias=["Defoliación, caída de cápsulas y menor calidad de la fibra."],
+        control=[
+            "Usar semilla sana y cultivares con mejor comportamiento.",
+            "Rotación de cultivos y destrucción del rastrojo.",
+            "Los fungicidas no controlan bacterias: definir el manejo con el Ingeniero Agrónomo.",
+        ],
+    ),
+    "Cotton___Herbicide_Damage": InfoClase(
+        cultivo="Algodón",
+        tipo="DEFICIENCIA",
+        nombre="Síntomas compatibles con daño por herbicida (algodón)",
+        descripcion="Daño no causado por patógenos: suele deberse a deriva o residuos de herbicidas hormonales u otros.",
+        sintomas=[
+            "Hojas deformadas, angostas, en forma de copa o con bordes dentados.",
+            "Nervaduras paralelas o engrosadas y crecimiento anormal de los brotes.",
+        ],
+        condiciones=["Aplicaciones cercanas con viento (deriva), equipos mal lavados o residuos en el suelo."],
+        consecuencias=["Retraso del crecimiento y pérdida de estructuras reproductivas según la intensidad."],
+        control=[
+            "Registrar fecha, lote y aplicaciones cercanas para identificar el origen.",
+            "Revisar la limpieza de los equipos y las condiciones de aplicación (viento, inversión térmica).",
+            "Definir con el Ingeniero Agrónomo cómo seguir según la intensidad del daño.",
+        ],
+    ),
+    "Cotton___Healthy": InfoClase(cultivo="Algodón", tipo="SANO", nombre="Algodón sin síntomas visibles"),
+    "Sugarcane___Brown_Rust": InfoClase(
+        cultivo="Caña de azúcar",
+        tipo="ENFERMEDAD",
+        nombre="Roya marrón de la caña de azúcar",
+        agente="Puccinia melanocephala (hongo)",
+        descripcion="Enfermedad foliar presente en Tucumán; su importancia depende de la variedad.",
+        sintomas=[
+            "Manchas alargadas, amarillentas al principio y luego castaño rojizas.",
+            "Pústulas en el envés que liberan esporas de color castaño.",
+            "Secado de hojas en variedades susceptibles.",
+        ],
+        condiciones=["Temperaturas moderadas con alta humedad y rocío.", "Variedades susceptibles y cañas jóvenes."],
+        consecuencias=["Pérdida de área foliar y menor producción de caña y azúcar."],
+        control=[
+            "Usar variedades con mejor comportamiento (principal medida de manejo).",
+            "Monitorear los cañaverales jóvenes en épocas favorables.",
+            "Definir el manejo con el Ingeniero Agrónomo.",
+        ],
+    ),
+    "Sugarcane___Smut": InfoClase(
+        cultivo="Caña de azúcar",
+        tipo="ENFERMEDAD",
+        nombre="Carbón de la caña de azúcar",
+        agente="Sporisorium scitamineum (hongo)",
+        descripcion="Enfermedad sistémica que se transmite por la caña semilla y por esporas en el viento.",
+        sintomas=[
+            "Estructura negra en forma de látigo en el ápice del tallo, cubierta de esporas.",
+            "Macollos finos, numerosos y con hojas angostas («aspecto de pasto»).",
+        ],
+        condiciones=["Caña semilla infectada.", "Clima cálido y seco que favorece la dispersión de esporas."],
+        consecuencias=["Pérdida de producción y de cepas en variedades susceptibles."],
+        control=[
+            "Usar caña semilla sana (semilleros saneados) y variedades con mejor comportamiento.",
+            "Eliminar las plantas con látigos antes de que liberen esporas.",
+        ],
+    ),
+    "Sugarcane___Yellow_Leaf": InfoClase(
+        cultivo="Caña de azúcar",
+        tipo="ENFERMEDAD",
+        nombre="Síndrome de la hoja amarilla de la caña de azúcar",
+        agente="Virus de la hoja amarilla de la caña (SCYLV), transmitido por pulgones y por caña semilla",
+        descripcion="Virosis que provoca amarillamiento de la nervadura central de las hojas.",
+        sintomas=[
+            "Amarillamiento intenso de la nervadura central en el envés de las hojas.",
+            "El amarillamiento avanza hacia la lámina y puede terminar en secado.",
+        ],
+        condiciones=["Caña semilla infectada.", "Presencia de pulgones vectores."],
+        consecuencias=["Menor crecimiento y pérdida de rendimiento."],
+        control=CONTROL_VIRUS_GENERAL,
+    ),
+    "Sugarcane___Pokkah_Boeng": InfoClase(
+        cultivo="Caña de azúcar",
+        tipo="ENFERMEDAD",
+        nombre="Pokkah boeng de la caña de azúcar",
+        agente="Fusarium spp. (complejo Fusarium fujikuroi; hongo)",
+        descripcion="Enfermedad que afecta las hojas jóvenes del cogollo en períodos de crecimiento rápido.",
+        sintomas=[
+            "Hojas jóvenes cloróticas, arrugadas y deformadas en la base.",
+            "Hojas del cogollo enroscadas; en casos graves, pudrición del cogollo.",
+        ],
+        condiciones=["Clima cálido y húmedo después de un período seco (crecimiento rápido).", "Variedades susceptibles."],
+        consecuencias=["Generalmente daño leve; en casos graves, muerte del cogollo."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Sugarcane___Brown_Spot": InfoClase(
+        cultivo="Caña de azúcar",
+        tipo="ENFERMEDAD",
+        nombre="Mancha parda de la caña de azúcar",
+        agente="Cercospora longipes (hongo)",
+        descripcion="Enfermedad foliar que aparece sobre todo en hojas maduras.",
+        sintomas=["Manchas ovaladas a alargadas de color castaño rojizo, a veces con halo amarillo.", "Las manchas se unen y secan partes de la hoja."],
+        condiciones=["Alta humedad y temperaturas cálidas.", "Variedades susceptibles."],
+        consecuencias=["Pérdida de área foliar en ataques intensos."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Sugarcane___Healthy": InfoClase(cultivo="Caña de azúcar", tipo="SANO", nombre="Caña de azúcar sin síntomas visibles"),
+    "Sorghum___Anthracnose": InfoClase(
+        cultivo="Sorgo",
+        tipo="ENFERMEDAD",
+        nombre="Antracnosis del sorgo",
+        agente="Colletotrichum sublineola (hongo)",
+        descripcion="Afecta hojas, nervadura central, tallo (podredumbre roja) y panoja.",
+        sintomas=[
+            "Manchas pequeñas, redondeadas o elípticas, con centro claro y borde rojizo a púrpura.",
+            "Lesiones rojizas en la nervadura central.",
+            "Al cortar el tallo, médula con zonas rojizas (podredumbre roja).",
+        ],
+        condiciones=["Temperaturas cálidas con lluvias frecuentes y alta humedad.", "Rastrojo infectado e híbridos susceptibles."],
+        consecuencias=["Pérdida de área foliar, quebrado de tallos y menor rendimiento."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Sorghum___Rust": InfoClase(
+        cultivo="Sorgo",
+        tipo="ENFERMEDAD",
+        nombre="Roya del sorgo",
+        agente="Puccinia purpurea (hongo)",
+        descripcion="Enfermedad foliar que forma pústulas; suele aparecer en la segunda mitad del ciclo.",
+        sintomas=["Pústulas alargadas de color castaño rojizo en ambas caras de la hoja.", "Manchas púrpuras o rojizas alrededor de las pústulas."],
+        condiciones=["Temperaturas moderadas y alta humedad."],
+        consecuencias=["Pérdida de área foliar; daño mayor en híbridos susceptibles y ataques tempranos."],
+        control=CONTROL_FUNGICO_GENERAL,
+    ),
+    "Sorghum___Head_Smut": InfoClase(
+        cultivo="Sorgo",
+        tipo="ENFERMEDAD",
+        nombre="Carbón de la panoja del sorgo",
+        agente="Sporisorium reilianum (hongo)",
+        descripcion="Enfermedad sistémica que reemplaza la panoja por una masa de esporas.",
+        sintomas=[
+            "Panoja reemplazada por una agalla cubierta por una membrana blanquecina.",
+            "Al romperse la membrana queda expuesta una masa de esporas negras con filamentos.",
+        ],
+        condiciones=["Esporas en el suelo que infectan la plántula; suelos secos y temperaturas moderadas a la emergencia."],
+        consecuencias=["Las plantas afectadas no producen grano."],
+        control=[
+            "Usar híbridos con mejor comportamiento.",
+            "Rotación de cultivos para reducir las esporas en el suelo.",
+            "Definir el tratamiento de semilla con el Ingeniero Agrónomo.",
+        ],
+    ),
+    "Sorghum___Grain_Mold": InfoClase(
+        cultivo="Sorgo",
+        tipo="ENFERMEDAD",
+        nombre="Moho del grano del sorgo",
+        agente="Complejo de hongos (p. ej. Fusarium, Curvularia, Alternaria)",
+        descripcion="Hongos que colonizan el grano en formación cuando hay lluvias durante la maduración.",
+        sintomas=["Granos con moho blanco, rosado o negro.", "Granos descoloridos, livianos o deformados."],
+        condiciones=["Lluvias y alta humedad entre la floración y la madurez fisiológica."],
+        consecuencias=["Menor peso y calidad del grano; posible presencia de micotoxinas."],
+        control=[
+            "Usar híbridos de grano con mejor comportamiento y ajustar la fecha de siembra.",
+            "Cosechar en cuanto el grano llega a la humedad adecuada.",
+            "Analizar el grano si se sospechan micotoxinas.",
+        ],
+    ),
     "Invalid": InfoClase(cultivo=None, tipo="INVALIDA", nombre="La imagen no corresponde a una hoja de cultivo analizable"),
 }
+
+
+ARCHIVO_CLASES_APRENDIDAS = "clases_aprendidas.json"
+
+
+def cargar_clases_aprendidas(carpeta_modelos: Path | None = None) -> int:
+    """Agrega las afecciones que el modelo aprendió de diagnósticos validados por Ingenieros Agrónomos.
+
+    `entrenamiento/importar_validadas.py` las crea cuando junta suficientes fotos de una afección que no estaba
+    en el modelo, y el entrenamiento copia `clases_aprendidas.json` junto al modelo. Su ficha tiene solo lo que
+    escribió el Ingeniero (nombre y cultivo): nunca se inventan síntomas, agente ni condiciones.
+    No reemplaza las clases con ficha técnica. Devuelve cuántas clases se agregaron.
+    """
+    carpeta = carpeta_modelos or Path(__file__).resolve().parent.parent / "modelos"
+    agregadas = 0
+    for archivo in sorted(carpeta.glob(f"*/{ARCHIVO_CLASES_APRENDIDAS}")):
+        try:
+            datos = json.loads(archivo.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for etiqueta, c in datos.items():
+            if etiqueta in CLASES or not isinstance(c, dict) or not c.get("nombre"):
+                continue
+            n = c.get("fotos")
+            CLASES[etiqueta] = InfoClase(
+                cultivo=c.get("cultivo"),
+                tipo="APRENDIDA",
+                nombre=str(c["nombre"]),
+                descripcion=(
+                    f"Afección incorporada al modelo a partir de {n} diagnósticos validados por Ingenieros Agrónomos en SIGAgro. "
+                    if n else "Afección incorporada al modelo a partir de diagnósticos validados por Ingenieros Agrónomos en SIGAgro. "
+                ) + "Todavía no tiene ficha técnica: la información la aporta el Ingeniero Agrónomo.",
+                control=["Definir el manejo con el Ingeniero Agrónomo."],
+            )
+            agregadas += 1
+    return agregadas
 
 
 def info_de(etiqueta: str) -> InfoClase | None:
@@ -440,3 +849,6 @@ def normalizar_cultivo(texto: str | None) -> str | None:
         if t == clave or t.startswith(clave + " ") or t.startswith(clave + "-"):
             return cultivo
     return None
+
+
+cargar_clases_aprendidas()

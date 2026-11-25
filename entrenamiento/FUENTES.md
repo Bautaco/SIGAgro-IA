@@ -11,6 +11,33 @@ se unifican y renombran en `preparar_datos.py`; la clase `Leaf_scars` del giraso
 | Girasol | [Project-AgML/sunflower_disease_classification](https://huggingface.co/datasets/Project-AgML/sunflower_disease_classification) | Mendeley Data, DOI [10.17632/b83hmrzth8.1](https://doi.org/10.17632/b83hmrzth8.1) | CC BY 4.0 |
 | Maní | [Project-AgML/groundnut_leaf_disease_classification_2](https://huggingface.co/datasets/Project-AgML/groundnut_leaf_disease_classification_2) | Aishwarya & Padmanabha Reddy (2023), *Data in Brief*; Mendeley Data, DOI [10.17632/22p2vcbxfk.3](https://doi.org/10.17632/22p2vcbxfk.3) | CC BY 4.0 |
 
+## Ampliación: más cultivos y enfermedades presentes en Argentina (`ampliar_datos.py`)
+
+Se suman fotos de maíz, trigo, sorgo, papa, poroto, algodón y caña de azúcar, y más fotos de clases débiles de soja
+y maní. Solo se usan clases de problemas presentes en Argentina; se descartan las demás (p. ej. MSV y MLN del maíz,
+roseta del maní, virus del enrollamiento del algodón, langosta africana) y las clases ambiguas o demasiado generales.
+Tope de 900 fotos por clase y 500 por fuente, para que ninguna fuente domine.
+
+| Cultivo | Conjunto | Clases usadas | Licencia |
+|---|---|---|---|
+| Maíz, papa, soja | [Project-AgML/plant_village_classification](https://huggingface.co/datasets/Project-AgML/plant_village_classification) — PlantVillage (Hughes y Salathé, 2015, arXiv:1511.08060); copia pública en Mendeley Data por Pandian y Gopal, DOI [10.17632/tywbtsjrjv.1](https://doi.org/10.17632/tywbtsjrjv.1) | Mancha gris, roya común, tizón foliar y sano (maíz); tizón temprano, tizón tardío y sana (papa); soja sana | CC0 1.0 (copia de Mendeley; la ficha de Hugging Face no declara licencia) |
+| Maíz, papa, soja | [Project-AgML/plant_doc_classification](https://huggingface.co/datasets/Project-AgML/plant_doc_classification) — PlantDoc (Singh et al., 2020), **fotos a campo** | Mancha gris, tizón foliar, roya (maíz); tizón temprano y tardío (papa); soja sana | CC BY-SA 4.0 |
+| Maíz | [Project-AgML/corn_leaf_pest_classification](https://huggingface.co/datasets/Project-AgML/corn_leaf_pest_classification) | Tizón foliar (Helminthosporium), gusano cogollero (*Spodoptera frugiperda*), sano | CC BY 4.0 |
+| Trigo | Wheat Leaf Dataset — Getachew (2021), Mendeley Data DOI [10.17632/wgd66f8n6h.1](https://doi.org/10.17632/wgd66f8n6h.1) (Etiopía, a campo) | Roya amarilla, septoriosis, sano | CC BY 4.0 |
+| Trigo | Disease Dataset of Wheat (2025), Mendeley Data DOI [10.17632/5gc7hwydwg.1](https://doi.org/10.17632/5gc7hwydwg.1) (Bangladesh; solo las fotos originales, no las aumentadas) | Mancha borrosa (leaf blight), brusone, sano | CC BY 4.0 |
+| Sorgo | Sorghum Disease Image Dataset (2024), Mendeley Data DOI [10.17632/fgb3cmfrg2.1](https://doi.org/10.17632/fgb3cmfrg2.1) | Antracnosis, roya, carbón de la panoja, moho del grano (no trae plantas sanas) | CC BY 4.0 |
+| Soja | [Project-AgML/soybean_leaf_disease_classification](https://huggingface.co/datasets/Project-AgML/soybean_leaf_disease_classification) | Tizón bacteriano, mancha marrón (septoria), sana | CC BY 4.0 |
+| Maní | [Project-AgML/groundnut_leaf_disease_classification](https://huggingface.co/datasets/Project-AgML/groundnut_leaf_disease_classification) | Mancha por Alternaria, roya, sano | CC BY 4.0 |
+| Papa | [Project-AgML/potato_leaf_disease_classification](https://huggingface.co/datasets/Project-AgML/potato_leaf_disease_classification) | Tizón tardío (Phytophthora), virosis, sana | CC BY 4.0 |
+| Poroto | [Project-AgML/bean_disease_uganda](https://huggingface.co/datasets/Project-AgML/bean_disease_uganda) (iBean, Makerere AI Lab) | Mancha angular, roya, sano | CC BY 4.0 |
+| Poroto | [Project-AgML/bean_disease_classification_tanzania](https://huggingface.co/datasets/Project-AgML/bean_disease_classification_tanzania) | Antracnosis, roya, sano | CC BY 4.0 |
+| Algodón | [Project-AgML/cotton_leaf_disease_classification_bangladesh_2](https://huggingface.co/datasets/Project-AgML/cotton_leaf_disease_classification_bangladesh_2) | Bacteriosis, daño por herbicida, sano | CC BY 4.0 |
+| Caña de azúcar | [Project-AgML/sugarcane_leaf_disease_classification](https://huggingface.co/datasets/Project-AgML/sugarcane_leaf_disease_classification) | Roya marrón, carbón, hoja amarilla, pokkah boeng, mancha parda, sana | CC BY 4.0 |
+
+Notas: PlantVillage son fotos de laboratorio con fondo uniforme; por eso se combinan con PlantDoc y otras fotos a
+campo. El sorgo no tiene clase «sano» en los datos: una foto de sorgo sano puede clasificarse como enfermo con baja
+confianza (el umbral del servicio la marca como inconclusa).
+
 **Modelo base:** [`wambugu71/crop_leaf_diseases_vit`](https://huggingface.co/wambugu71/crop_leaf_diseases_vit)
 (ViT tiny, licencia MIT), revisión `7d5b32bcd6f83a2f57e7e0346358fad276296877`.
 

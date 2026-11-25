@@ -69,3 +69,11 @@ def test_modelo_informa_los_cultivos_de_todos_los_modelos():
     m = c.get("/modelo").json()
     assert {"Maíz", "Soja", "Maní"} <= set(m["cultivosModeloLocal"])
     assert c.get("/salud").json()["modelosAdicionales"][0]["cultivos"] == ["Maní", "Soja"]
+
+
+def test_modelo_lista_las_clases_con_nombre_para_rectificar():
+    clases = {x["etiqueta"]: x for x in cliente(ExtensivosFalso({})).get("/modelo").json()["clases"]}
+    assert clases["Soybean___Frog_Eye_Leaf_Spot"] == {
+        "etiqueta": "Soybean___Frog_Eye_Leaf_Spot", "nombre": "Mancha ojo de rana de la soja", "cultivo": "Soja", "tipo": "ENFERMEDAD",
+    }
+    assert "Invalid" not in clases  # la clase "no es una hoja" no se ofrece como afección

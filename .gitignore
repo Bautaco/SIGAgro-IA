@@ -11,3 +11,4 @@ entrenamiento/salida/
 
 # Copias de respaldo de modelos reemplazados por un reentrenamiento
 modelos/*.anterior-*/
+entrenamiento/sin_clase/

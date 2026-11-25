@@ -39,7 +39,7 @@ from sklearn.model_selection import train_test_split  # noqa: E402
 from torchvision.transforms import v2  # noqa: E402
 from transformers import AutoImageProcessor, AutoModelForImageClassification  # noqa: E402
 
-from entrenamiento.entrenar import BASE, BASE_REVISION, DATOS, DESTINO, SALIDA, SEMILLA  # noqa: E402
+from entrenamiento.entrenar import BASE, BASE_REVISION, DATOS, DESTINO, SALIDA, SEMILLA, copiar_clases_aprendidas  # noqa: E402
 
 LADO = 256
 IMAGENES = SALIDA / "imagenes_256.npy"
@@ -243,6 +243,7 @@ def main() -> None:
             print(f"Modelo anterior respaldado en {respaldo}", flush=True)
     modelo.save_pretrained(DESTINO)
     procesador.save_pretrained(DESTINO)
+    copiar_clases_aprendidas(etiquetas, DESTINO)
 
     version = time.strftime("local-%Y%m%d-%H%M")
     metricas = {
