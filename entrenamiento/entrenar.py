@@ -1,5 +1,5 @@
 """
-Entrena el modelo de cultivos extensivos (soja, girasol, maní) a partir de entrenamiento/datos/<Etiqueta>/*.jpg.
+Entrena el modelo de cultivos extensivos (maíz, trigo, sorgo, maní, soja, girasol y otros) a partir de entrenamiento/datos/<Etiqueta>/*.jpg.
 
 Técnica (apta para equipos sin placa de video): se parte del ViT liviano `wambugu71/crop_leaf_diseases_vit`
 (MIT, ya entrenado con hojas de cultivos), se mantiene fijo su extractor de características y se entrena solo la
@@ -199,7 +199,7 @@ def main() -> None:
         "# Modelo `sigagro-extensivos` — métricas",
         "",
         f"- Versión: `{metricas['version']}` · base: `{BASE}` (MIT) · técnica: extractor fijo + capa de clasificación entrenada",
-        f"- Datos: {len(items)} fotos de 4 conjuntos públicos CC BY 4.0 (ver `entrenamiento/FUENTES.md`) · semilla {SEMILLA}",
+        f"- Datos: {len(items)} fotos de conjuntos públicos con licencia abierta (ver `entrenamiento/FUENTES.md`) · semilla {SEMILLA}",
         f"- División: {len(entr)} entrenamiento ({args.variantes} variantes por foto) · {len(valid)} validación · {len(prueba)} prueba",
         "",
         f"**Acierto en el conjunto de prueba ({len(prueba)} fotos no vistas): {acierto:.1%}** · F1 macro: {reporte['macro avg']['f1-score']:.1%}",

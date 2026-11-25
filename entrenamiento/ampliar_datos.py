@@ -24,6 +24,7 @@ import subprocess
 import time
 import zipfile
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
@@ -39,6 +40,7 @@ DATOS = RAIZ / "datos"
 DESCARGAS = RAIZ / ".cache" / "descargas"
 HECHAS = RAIZ / "salida" / "fuentes_ampliadas.json"
 LADO = 320
+DISTANCIA_REPETIDA = 12  # bits distintos (de 256) por debajo de los cuales dos fotos se consideran la misma
 EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 
 # ───────── Hugging Face (Project-AgML): fuente -> (prefijo, {clase original: etiqueta | None}) ─────────
@@ -67,6 +69,9 @@ HF: dict[str, tuple[str, dict[str, str | None]]] = {
         "spodoptera_frugiperda": "Corn___Fall_Armyworm",
         "zonocerus_variegatus": None,  # langosta africana: no está en Argentina
     }),
+    # CCMT (Ghana; anacardo, mandioca, maíz y tomate, fotos a campo). Las etiquetas no dicen el cultivo: solo se usa
+    # el gusano cogollero, que en este conjunto es exclusivo del maíz; las demás clases se descartan por ambiguas.
+    "crop_pest_disease_classification": ("ccmt", {"fall armyworm": "Corn___Fall_Armyworm"}),
     "soybean_leaf_disease_classification": ("soyld", {
         "Bacterial leaf Blight": "Soybean___Bacterial_Blight",
         "Septoria_Brown_Spot": "Soybean___Septoria_Brown_Spot",
@@ -114,6 +119,13 @@ HF: dict[str, tuple[str, dict[str, str | None]]] = {
     }),
 }
 
+# Solo se leen los parquet de esta carpeta (los conjuntos que traen copias aumentadas de la misma foto filtrarían
+# variantes de una hoja a la vez al entrenamiento y a la prueba, inflando las métricas)
+HF_CARPETA: dict[str, str] = {
+    "cotton_leaf_disease_classification_bangladesh_2": "raw/",
+    "crop_pest_disease_classification": "raw/",
+}
+
 # ───────── Mendeley Data (CC BY 4.0) ─────────
 MENDELEY_ARCHIVOS = {
     # nombre: (prefijo, URL del archivo, reglas [(palabra en la carpeta, etiqueta)], la ruta debe contener)
@@ -131,6 +143,25 @@ MENDELEY_ARCHIVOS = {
         "original",  # el conjunto trae también copias aumentadas y balanceadas: solo se usan las originales
         "wheat_disease.zip",
     ),
+    # Roya de la hoja (Puccinia triticina): la principal enfermedad del trigo en Argentina. Arya y Singh (2020).
+    "wheat_leaf_rust": (
+        "whelr",
+        "https://data.mendeley.com/public-files/datasets/th422bg4yd/files/e8dc9987-db3b-4b0e-9363-613d599bf0bd/file_downloaded",
+        [("rust", "Wheat___Brown_Rust"), ("disease", "Wheat___Brown_Rust"), ("control", "Wheat___Healthy"), ("healthy", "Wheat___Healthy")],
+        None,
+        "wheat_leaf_rust.zip",
+    ),
+    # Conjunto completo de maní de Aishwarya y Padmanabha Reddy (la copia de Hugging Face es solo una parte). Las fotos
+    # repetidas con las ya cargadas se descartan por huella visual (ver Contador.guardar).
+    "groundnut_mendeley": (
+        "gnutm",
+        "https://data.mendeley.com/public-files/datasets/22p2vcbxfk/files/77344123-bac8-44b6-983b-9063fb16a31a/file_downloaded",
+        [("early_rust", None), ("early rust", None),  # roya incipiente: síntomas mínimos, se confunde con hoja sana
+         ("early", "Groundnut___Early_Leaf_Spot"), ("late", "Groundnut___Late_Leaf_Spot"), ("rust", "Groundnut___Rust"),
+         ("healthy", "Groundnut___Healthy"), ("nutri", "Groundnut___Nutrient_Deficiency")],
+        None,
+        "groundnut_mendeley.zip",
+    ),
 }
 SORGO_DATASET = "fgb3cmfrg2"
 SORGO_CARPETAS = {
@@ -142,13 +173,57 @@ SORGO_CARPETAS = {
 }
 
 
+def _huella(img: Image.Image) -> int:
+    """Huella visual (dHash 16x16): igual para la misma foto aunque cambie el tamaño o la compresión JPEG."""
+    g = img.convert("L").resize((17, 16), Image.Resampling.LANCZOS)
+    px = list(g.getdata())
+    bits = 0
+    for fila in range(16):
+        for col in range(16):
+            bits = (bits << 1) | (px[fila * 17 + col] > px[fila * 17 + col + 1])
+    return bits
+
+
+PRIORIDAD = [
+    "corn_leaf_pest_classification", "crop_pest_disease_classification",  # maíz
+    "wheat_leaf_rust", "wheat_disease_bangladesh", "wheat_leaf_etiopia",  # trigo
+    "sorgo_mendeley",  # sorgo
+    "groundnut_mendeley", "groundnut_leaf_disease_classification",  # maní
+    "soybean_leaf_disease_classification",  # soja
+    "plant_village_classification", "plant_doc_classification",  # maíz/soja/papa mezclados
+]
+
+
 class Contador:
     """Lleva cuántas fotos tiene cada etiqueta (incluidas las que ya estaban) y cuántas aportó cada fuente."""
 
     def __init__(self, maximo: int, por_fuente: int):
         self.maximo, self.por_fuente = maximo, por_fuente
         self.total: Counter = Counter({p.name: sum(1 for f in p.iterdir() if f.suffix.lower() in EXT) for p in DATOS.iterdir() if p.is_dir()} if DATOS.exists() else {})
+        # lo que cada fuente ya aportó en corridas anteriores (prefijo del nombre de archivo) cuenta para su tope
         self.fuente: Counter = Counter()
+        if DATOS.exists():
+            for carpeta in DATOS.iterdir():
+                if carpeta.is_dir():
+                    for f in carpeta.iterdir():
+                        if f.suffix.lower() in EXT and "_" in f.stem:
+                            self.fuente[(f.stem.split("_", 1)[0], carpeta.name)] += 1
+        self._huellas: dict[str, set[int]] = {}
+        self.repetidas = 0
+
+    def _huellas_de(self, etiqueta: str) -> set[int]:
+        if etiqueta not in self._huellas:
+            conjunto: set[int] = set()
+            carpeta = DATOS / etiqueta
+            if carpeta.exists():
+                for f in carpeta.iterdir():
+                    if f.suffix.lower() in EXT:
+                        try:
+                            conjunto.add(_huella(Image.open(f)))
+                        except Exception:  # noqa: BLE001
+                            pass
+            self._huellas[etiqueta] = conjunto
+        return self._huellas[etiqueta]
 
     def admite(self, prefijo: str, etiqueta: str) -> bool:
         return self.total[etiqueta] < self.maximo and self.fuente[(prefijo, etiqueta)] < self.por_fuente
@@ -159,11 +234,20 @@ class Contador:
         try:
             img = img.convert("RGB")
             img.thumbnail((LADO, LADO))
-            destino = DATOS / etiqueta / f"{prefijo}_{self.fuente[(prefijo, etiqueta)]:05d}.jpg"
+            huella = _huella(img)
+            huellas = self._huellas_de(etiqueta)
+            # la misma foto ya está (otra fuente o copia del mismo conjunto); se tolera la diferencia que deja
+            # volver a comprimir en JPEG o cambiar el tamaño
+            if huella in huellas or any((huella ^ h).bit_count() <= DISTANCIA_REPETIDA for h in huellas):
+                self.repetidas += 1
+                return False
+            destino = DATOS / etiqueta / f"{prefijo}_{huella:064x}"[: len(prefijo) + 17]
+            destino = destino.with_suffix(".jpg")
             destino.parent.mkdir(parents=True, exist_ok=True)
             img.save(destino, format="JPEG", quality=90)
         except Exception:  # noqa: BLE001 - imagen dañada: se omite
             return False
+        huellas.add(huella)
         self.fuente[(prefijo, etiqueta)] += 1
         self.total[etiqueta] += 1
         return True
@@ -174,7 +258,9 @@ class Contador:
 
 def _hf(fuente: str, prefijo: str, mapa: dict[str, str | None], c: Contador) -> None:
     repo = f"Project-AgML/{fuente}"
-    archivos = sorted(f for f in HfApi().list_repo_files(repo, repo_type="dataset") if f.endswith(".parquet"))
+    carpeta = HF_CARPETA.get(fuente, "")
+    archivos = sorted(f for f in HfApi().list_repo_files(repo, repo_type="dataset") if f.endswith(".parquet") and f.startswith(carpeta))
+    nombres_hub: list[str] | None = None
     destinos = {e for e in mapa.values() if e}
     print(f"\n[{fuente}] {len(archivos)} archivo(s) parquet", flush=True)
     for nombre in archivos:
@@ -182,7 +268,13 @@ def _hf(fuente: str, prefijo: str, mapa: dict[str, str | None], c: Contador) -> 
             print("  todas sus clases llegaron al tope: no se descarga el resto", flush=True)
             break
         ruta = Path(hf_hub_download(repo, nombre, repo_type="dataset"))
-        clases = _nombres_clase(ruta) or _nombres_desde_hub(repo)
+        clases = _nombres_clase(ruta)
+        if not clases:
+            nombres_hub = nombres_hub or _nombres_desde_hub(repo)
+            clases = nombres_hub
+            if not clases:
+                # sin nombres no se puede saber qué es cada número: se aborta la fuente (no queda marcada como hecha)
+                raise RuntimeError("no se pudieron leer los nombres de las clases")
         pf = pq.ParquetFile(ruta)
         cols = pf.schema_arrow.names
         col_img = "image" if "image" in cols else next(x for x in cols if "image" in x.lower())
@@ -207,13 +299,15 @@ def _hf(fuente: str, prefijo: str, mapa: dict[str, str | None], c: Contador) -> 
 
 def _nombres_desde_hub(repo: str) -> list[str] | None:
     """Nombres de las clases desde la ficha del conjunto (algunos parquet traen solo el número de clase)."""
-    try:
-        info = _curl_json(f"https://datasets-server.huggingface.co/info?dataset={repo}")["dataset_info"]
-        for f in next(iter(info.values()))["features"].values():
-            if isinstance(f, dict) and f.get("_type") == "ClassLabel":
-                return f["names"]
-    except Exception:  # noqa: BLE001
-        return None
+    for intento in range(4):
+        try:
+            info = _curl_json(f"https://datasets-server.huggingface.co/info?dataset={repo}")["dataset_info"]
+            for f in next(iter(info.values()))["features"].values():
+                if isinstance(f, dict) and f.get("_type") == "ClassLabel":
+                    return f["names"]
+            return None
+        except Exception:  # noqa: BLE001 - el servidor a veces falla: se reintenta
+            time.sleep(3 * (intento + 1))
     return None
 
 
@@ -286,18 +380,26 @@ def _sorgo(c: Contador) -> None:
             continue
         archivos = _curl_json(f"{base}/files?folder_id={carpeta['id']}&version=1")
         print(f"  {carpeta['name'].strip()}: {len(archivos)} fotos disponibles", flush=True)
-        for a in archivos:
-            if not c.admite("sorgo", etiqueta):
-                break
-            url = (a.get("content_details") or {}).get("download_url")
-            if not url:
-                continue
-            r = subprocess.run(["curl", "-s", "-L", "--fail", "--retry", "3", url], capture_output=True)
-            if r.returncode == 0 and r.stdout:
-                try:
-                    c.guardar("sorgo", etiqueta, Image.open(io.BytesIO(r.stdout)))
-                except Exception:  # noqa: BLE001
-                    pass
+        urls = [u for a in archivos if (u := (a.get("content_details") or {}).get("download_url"))]
+        # Mendeley sirve las fotos de a una: se bajan en paralelo y se guardan en orden en este hilo
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            for i in range(0, len(urls), 48):
+                if not c.admite("sorgo", etiqueta):
+                    break
+                for cuerpo in pool.map(_bajar, urls[i : i + 48]):
+                    if cuerpo and c.admite("sorgo", etiqueta):
+                        try:
+                            c.guardar("sorgo", etiqueta, Image.open(io.BytesIO(cuerpo)))
+                        except Exception:  # noqa: BLE001
+                            pass
+        print(f"    guardadas: {c.total[etiqueta]}", flush=True)
+
+
+def _bajar(url: str) -> bytes | None:
+    r = subprocess.run(["curl", "-s", "-L", "--fail", "--retry", "3", url], capture_output=True)
+    return r.stdout if r.returncode == 0 and r.stdout else None
+
+
 
 
 def main() -> None:
@@ -312,6 +414,8 @@ def main() -> None:
     tareas = [(n, lambda n=n: _hf(n, *HF[n], c)) for n in HF]
     tareas += [(n, lambda n=n: _mendeley_archivo(n, c)) for n in MENDELEY_ARCHIVOS]
     tareas += [("sorgo_mendeley", lambda: _sorgo(c))]
+    # Primero los cultivos prioritarios en Argentina (maíz, trigo, sorgo, maní, soja); después el resto
+    tareas.sort(key=lambda t: PRIORIDAD.index(t[0]) if t[0] in PRIORIDAD else len(PRIORIDAD))
 
     inicio = time.time()
     for nombre, tarea in tareas:

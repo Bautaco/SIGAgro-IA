@@ -10,6 +10,8 @@ from typing import Protocol
 
 from PIL import Image
 
+from .calibracion import Calibracion, cargar as cargar_calibracion
+
 log = logging.getLogger("sigagro-ia")
 
 
@@ -19,7 +21,7 @@ class Clasificador(Protocol):
     etiquetas: list[str]
 
     def clasificar(self, img: Image.Image) -> list[tuple[str, float]]:
-        """Probabilidad (softmax) de TODAS las clases, ordenadas de mayor a menor."""
+        """Probabilidad (softmax, calibrada si el modelo trae calibracion.json) de TODAS las clases, de mayor a menor."""
         ...
 
 
@@ -41,12 +43,16 @@ class ClasificadorHuggingFace:
         id2label = self.modelo.config.id2label
         self.etiquetas = [id2label[i] for i in sorted(id2label)]
         self._lock = threading.Lock()
+        # Calibración de la confianza (temperatura y umbrales por cultivo), si el modelo local la trae
+        self.calibracion: Calibracion = cargar_calibracion(modelo_id) if Path(modelo_id).is_dir() else Calibracion()
+        if self.calibracion.activa:
+            log.info("Modelo %s calibrado: temperatura %.3f", self.id, self.calibracion.temperatura)
 
     def clasificar(self, img: Image.Image) -> list[tuple[str, float]]:
         entradas = self.procesador(images=img, return_tensors="pt")
         with self._lock, self._torch.no_grad():
             logits = self.modelo(**entradas).logits[0]
-        probs = self._torch.softmax(logits, dim=-1).tolist()
+        probs = self._torch.softmax(logits / self.calibracion.temperatura, dim=-1).tolist()
         return sorted(zip(self.etiquetas, probs), key=lambda x: x[1], reverse=True)
 
 

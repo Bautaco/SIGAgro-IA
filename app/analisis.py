@@ -226,12 +226,15 @@ def _clasificar_local(img, calidad, clasificador: Clasificador, config: Config, 
     if not info_de(etiqueta):
         r["afeccion"] = etiqueta
 
-    # Motivos para no dar el resultado como probable
+    # Motivos para no dar el resultado como probable. El mínimo es el mayor entre el general y el del cultivo
+    # (calibrado con el conjunto de validación: en cultivos donde el modelo es menos confiable, se exige más).
+    calibracion = getattr(clasificador, "calibracion", None)
+    umbral = max(config.umbral_confianza, (calibracion.umbrales_por_cultivo.get(info.cultivo or "", 0.0) if calibracion else 0.0))
+    r["confianzaCalibrada"] = bool(calibracion and calibracion.activa)
+    r["umbralAplicado"] = round(umbral, 4)
     motivos: list[str] = []
-    if prob < config.umbral_confianza:
-        motivos.append(
-            f"la confianza del modelo ({prob:.0%}) es menor al mínimo requerido ({config.umbral_confianza:.0%})"
-        )
+    if prob < umbral:
+        motivos.append(f"la confianza del modelo ({prob:.0%}) es menor al mínimo requerido ({umbral:.0%})")
     elif prob - segunda < config.margen_minimo:
         motivos.append("hay más de un diagnóstico posible con probabilidades similares")
     if info.tipo == "INVALIDA":

@@ -16,6 +16,9 @@ Dueño), sin datos personales ni ubicación.
   `app/conocimiento.py`, esa ficha reemplaza a la mínima.
 - Es incremental: recuerda la última fecha de validación importada (`entrenamiento/salida/importadas.json`).
 
+Una parte fija de las validadas (`--fraccion-prueba`, 25 % por defecto, elegida por id) NO se entrena: va a
+`entrenamiento/prueba_argentina/<Clase>/` para medir la IA con fotos argentinas (`evaluar_argentina.py`).
+
 Las fotos con prefijo `sigagro_` se informan aparte en las métricas (acierto con fotos propias).
 
 Uso (la contraseña se pide por teclado si no está en la variable de entorno):
@@ -38,6 +41,7 @@ from pathlib import Path
 import re
 import shutil
 import unicodedata
+import hashlib
 from collections import defaultdict
 
 import httpx
@@ -47,6 +51,8 @@ from app.conocimiento import CLASES, normalizar_cultivo
 
 RAIZ = Path(__file__).resolve().parent
 DATOS = RAIZ / "datos"
+# Conjunto de prueba argentino (nunca se entrena con él): ver evaluar_argentina.py
+PRUEBA_ARGENTINA = RAIZ / "prueba_argentina"
 SIN_CLASE = RAIZ / "sin_clase"
 ESTADO = RAIZ / "salida" / "importadas.json"
 CLASES_APRENDIDAS = RAIZ / "clases_aprendidas.json"
@@ -72,6 +78,14 @@ def _guardar(img: Image.Image, destino: Path) -> None:
     img.thumbnail((LADO, LADO))
     destino.parent.mkdir(parents=True, exist_ok=True)
     img.save(destino, format="JPEG", quality=90)
+
+
+def va_a_prueba(diagnostico_id: str, fraccion: float) -> bool:
+    """Reparto fijo por id (no al azar en cada corrida): la misma foto cae siempre en el mismo conjunto."""
+    if fraccion <= 0:
+        return False
+    h = int(hashlib.sha256(str(diagnostico_id).encode()).hexdigest()[:8], 16)
+    return (h % 10_000) / 10_000 < fraccion
 
 
 def _sin_tildes(texto: str) -> str:
@@ -130,6 +144,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--desde-cero", action="store_true", help="Volver a revisar todas las validaciones")
     ap.add_argument("--minimo-clase", type=int, default=25, help="Fotos validadas necesarias para crear una afección nueva")
+    ap.add_argument(
+        "--fraccion-prueba",
+        type=float,
+        default=0.25,
+        help="Parte de las fotos validadas (de clases del modelo) que se reserva para medir la IA con fotos argentinas "
+        "(entrenamiento/prueba_argentina/, nunca se entrena con ellas). 0 = todas al entrenamiento.",
+    )
     args = ap.parse_args()
 
     api = os.environ.get("SIGAGRO_API", "http://localhost:3000/api").rstrip("/")
@@ -139,6 +160,7 @@ def main() -> None:
     desde = estado.get("ultimaValidacion")
     clases_validas = {e for e, i in CLASES.items() if i.cultivo}
 
+    a_prueba = 0
     with httpx.Client(base_url=api, timeout=60) as http:
         r = http.post("/seguridad/auth/login", json={"usernameOrEmail": usuario, "password": password})
         if r.status_code != 200 and r.status_code != 201:
@@ -146,7 +168,7 @@ def main() -> None:
         token = r.json().get("accessToken")
         http.headers.update({"Authorization": f"Bearer {token}", "x-session-token": token})
         try:
-            nuevas, sin_clase, omitidas, pagina = 0, 0, 0, 1
+            nuevas, sin_clase, omitidas, pagina, a_prueba = 0, 0, 0, 1, 0
             manifiesto_ruta = SIN_CLASE / "manifiesto.json"
             manifiesto = json.loads(manifiesto_ruta.read_text(encoding="utf-8")) if manifiesto_ruta.exists() else []
             ultima = desde
@@ -168,10 +190,14 @@ def main() -> None:
                         continue
                     etiqueta = it.get("etiqueta")
                     if etiqueta in clases_validas:
-                        destino = DATOS / etiqueta / f"{PREFIJO}_{it['id']}.jpg"
+                        base = PRUEBA_ARGENTINA if va_a_prueba(it["id"], args.fraccion_prueba) else DATOS
+                        destino = base / etiqueta / f"{PREFIJO}_{it['id']}.jpg"
                         if not destino.exists():
                             _guardar(img, destino)
-                            nuevas += 1
+                            if base is PRUEBA_ARGENTINA:
+                                a_prueba += 1
+                            else:
+                                nuevas += 1
                     else:
                         destino = SIN_CLASE / f"{PREFIJO}_{it['id']}.jpg"
                         if not destino.exists():
@@ -192,7 +218,8 @@ def main() -> None:
         print(f"Nueva afección aprendida de los Ingenieros: {e}")
     ESTADO.parent.mkdir(exist_ok=True)
     ESTADO.write_text(json.dumps({"ultimaValidacion": ultima}, indent=2), encoding="utf-8")
-    print(f"\nImportadas al dataset: {nuevas} · sin clase del modelo (a revisar en {SIN_CLASE.name}/): {sin_clase} · sin foto: {omitidas}")
+    print(f"\nReservadas para la prueba argentina (prueba_argentina/, no se entrenan): {a_prueba}")
+    print(f"Importadas al dataset: {nuevas} · sin clase del modelo (a revisar en {SIN_CLASE.name}/): {sin_clase} · sin foto: {omitidas}")
     if nuevas or creadas:
         print("Para reentrenar: .venv\\Scripts\\python.exe -m entrenamiento.entrenar y luego -m entrenamiento.ajuste_fino")
 

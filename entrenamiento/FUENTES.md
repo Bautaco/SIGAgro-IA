@@ -31,8 +31,27 @@ Tope de 900 fotos por clase y 500 por fuente, para que ninguna fuente domine.
 | Papa | [Project-AgML/potato_leaf_disease_classification](https://huggingface.co/datasets/Project-AgML/potato_leaf_disease_classification) | Tizón tardío (Phytophthora), virosis, sana | CC BY 4.0 |
 | Poroto | [Project-AgML/bean_disease_uganda](https://huggingface.co/datasets/Project-AgML/bean_disease_uganda) (iBean, Makerere AI Lab) | Mancha angular, roya, sano | CC BY 4.0 |
 | Poroto | [Project-AgML/bean_disease_classification_tanzania](https://huggingface.co/datasets/Project-AgML/bean_disease_classification_tanzania) | Antracnosis, roya, sano | CC BY 4.0 |
-| Algodón | [Project-AgML/cotton_leaf_disease_classification_bangladesh_2](https://huggingface.co/datasets/Project-AgML/cotton_leaf_disease_classification_bangladesh_2) | Bacteriosis, daño por herbicida, sano | CC BY 4.0 |
+| Algodón | [Project-AgML/cotton_leaf_disease_classification_bangladesh_2](https://huggingface.co/datasets/Project-AgML/cotton_leaf_disease_classification_bangladesh_2) (solo `raw/`, no las copias aumentadas) | Bacteriosis, daño por herbicida, sano | CC BY 4.0 |
 | Caña de azúcar | [Project-AgML/sugarcane_leaf_disease_classification](https://huggingface.co/datasets/Project-AgML/sugarcane_leaf_disease_classification) | Roya marrón, carbón, hoja amarilla, pokkah boeng, mancha parda, sana | CC BY 4.0 |
+
+### Segunda ampliación (prioridad: maíz, trigo, sorgo, maní y soja)
+
+| Cultivo | Conjunto | Clases usadas | Licencia |
+|---|---|---|---|
+| Trigo | Wheat nitrogen deficiency and leaf rust image dataset — Arya y Singh (2020), Mendeley Data DOI [10.17632/th422bg4yd.1](https://doi.org/10.17632/th422bg4yd.1) (solo `WheatLeafRust`) | **Roya de la hoja** (*Puccinia triticina*, la principal enfermedad del trigo en Argentina), sano | CC BY 4.0 |
+| Maní | Dataset of groundnut plant leaf images — Aishwarya y Padmanabha Reddy (2023), Mendeley Data DOI [10.17632/22p2vcbxfk.3](https://doi.org/10.17632/22p2vcbxfk.3) (conjunto completo; la copia de Hugging Face es una parte) | Viruela temprana y tardía, roya, deficiencia nutricional, sano (se descarta «early rust»: síntomas mínimos) | CC BY 4.0 |
+| Maíz | [Project-AgML/crop_pest_disease_classification](https://huggingface.co/datasets/Project-AgML/crop_pest_disease_classification) — CCMT (Ghana, fotos a campo; solo `raw/`) | Gusano cogollero (*Spodoptera frugiperda*); las demás etiquetas no indican el cultivo y se descartan | CC BY 4.0 |
+
+Las fotos repetidas (misma foto en dos fuentes o copias del mismo conjunto) se descartan por huella visual (dHash)
+dentro de cada etiqueta. Los conjuntos que traen copias aumentadas se leen solo desde sus fotos originales: si no,
+variantes de una misma hoja quedarían a la vez en entrenamiento y en prueba, inflando las métricas.
+
+**Brechas para Argentina (sin datos públicos con licencia abierta, quedan para el análisis en línea o el Ingeniero):**
+maíz — chicharrita / achaparramiento (*Dalbulus maidis*, Spiroplasma), mancha blanca (*Phaeosphaeria*), barrenador
+(*Diatraea*); trigo — mancha amarilla (*Drechslera tritici-repentis*), fusariosis de la espiga; sorgo — plantas
+sanas (no hay clase «sano»), tizón (*Exserohilum*); maní — carbón (*Thecaphora frezii*, afecta la caja); soja —
+tizón de la hoja / mancha púrpura (*Cercospora kikuchii*), mancha anillada; girasol — Verticillium, Sclerotinia,
+Phomopsis. Las fotos propias validadas por un Ingeniero (`importar_validadas.py`) son la forma de cubrirlas.
 
 Notas: PlantVillage son fotos de laboratorio con fondo uniforme; por eso se combinan con PlantDoc y otras fotos a
 campo. El sorgo no tiene clase «sano» en los datos: una foto de sorgo sano puede clasificarse como enfermo con baja

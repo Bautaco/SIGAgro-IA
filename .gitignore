@@ -12,3 +12,7 @@ entrenamiento/salida/
 # Copias de respaldo de modelos reemplazados por un reentrenamiento
 modelos/*.anterior-*/
 entrenamiento/sin_clase/
+
+# Fotos de prueba argentinas (de productores reales): solo se versiona el README
+entrenamiento/prueba_argentina/*
+!entrenamiento/prueba_argentina/README.md
