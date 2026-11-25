@@ -8,3 +8,6 @@ __pycache__/
 entrenamiento/datos/
 entrenamiento/.cache/
 entrenamiento/salida/
+
+# Copias de respaldo de modelos reemplazados por un reentrenamiento
+modelos/*.anterior-*/

@@ -428,7 +428,13 @@ probable un resultado dudoso, y conviene sumar fotos propias de esas afecciones 
 .\.venv\Scripts\python.exe -m pip install -r requirements-entrenamiento.txt --extra-index-url https://download.pytorch.org/whl/cpu
 .\.venv\Scripts\python.exe -m entrenamiento.preparar_datos    # descarga y prepara las imágenes (~9,6 GB de descarga)
 .\.venv\Scripts\python.exe -m entrenamiento.entrenar          # entrena, evalúa y guarda en modelos/sigagro-extensivos (~1 h en CPU)
+.\.venv\Scripts\python.exe -m entrenamiento.ajuste_fino       # 2.ª etapa: ajusta los últimos bloques del ViT (~3-4 h en CPU)
 ```
+
+La segunda etapa (`ajuste_fino.py`) parte del modelo de la primera y ajusta también los últimos bloques del
+transformer, con fotos distintas en cada época (recorte, espejo, giro, luz y color, como una toma a campo). Usa las
+**mismas fotos de prueba** que la primera etapa y reemplaza el modelo **solo si mejora el F1 macro**; el anterior queda
+respaldado en `modelos/sigagro-extensivos.anterior-<versión>/`. Se puede cortar y retomar con `--reanudar`.
 
 **Mejorarlo con fotos propias** (recomendado para uso productivo): agregar imágenes identificadas por un Ingeniero
 Agrónomo en `entrenamiento/datos/<Etiqueta>/`, volver a entrenar y revisar las métricas. Para incorporar una clase
